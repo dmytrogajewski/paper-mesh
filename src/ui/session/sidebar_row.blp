@@ -37,5 +37,19 @@ template $PaplSidebarRow: ListBoxRow {
         ]
       }
     }
+
+    Label unread_badge {
+      visible: false;
+      valign: center;
+      width-chars: 2;
+      halign: center;
+
+      styles [
+        "badge",
+        "accent",
+        "caption",
+        "heading",
+      ]
+    }
   };
 }

@@ -39,6 +39,9 @@ pub(crate) enum DeviceEvent {
     NodeMetrics {
         num: NodeId,
         battery_level: u32,
+        voltage: f32,
+        channel_utilization: f32,
+        air_util_tx: f32,
     },
     NodePosition {
         num: NodeId,
@@ -127,6 +130,7 @@ mod imp {
         pub(super) status_message: RefCell<String>,
         pub(super) connection_info: RefCell<String>,
         pub(super) config_loading: Cell<bool>,
+        pub(super) active_channel_index: Cell<Option<u32>>,
         pub(super) command_sender:
             RefCell<Option<tokio::sync::mpsc::UnboundedSender<DeviceCommand>>>,
     }
@@ -255,6 +259,18 @@ impl Device {
         self.notify("state");
     }
 
+    fn send_notification(&self, message: &MeshMessage) {
+        let app = gtk::gio::Application::default();
+        let Some(app) = app else { return };
+
+        let sender = message.sender_name();
+        let text = message.text();
+        let notif = gtk::gio::Notification::new(&format!("Message from {}", sender));
+        notif.set_body(Some(&text));
+        notif.set_priority(gtk::gio::NotificationPriority::Normal);
+        app.send_notification(Some("mesh-message"), &notif);
+    }
+
     fn set_status(&self, msg: &str) {
         self.imp().status_message.replace(msg.to_string());
         self.notify("status-message");
@@ -299,6 +315,19 @@ impl Device {
                 device.handle_event(event);
             }
         });
+
+        // Periodic node timeout check (every 60s, mark offline after 2h)
+        let device2 = self.downgrade();
+        glib::timeout_add_seconds_local(60, move || {
+            let Some(device) = device2.upgrade() else {
+                return glib::ControlFlow::Break;
+            };
+            if device.state() != DeviceState::Connected {
+                return glib::ControlFlow::Break;
+            }
+            device.check_node_timeouts();
+            glib::ControlFlow::Continue
+        });
     }
 
     pub(crate) fn disconnect(&self) {
@@ -307,6 +336,40 @@ impl Device {
         }
         self.set_state(DeviceState::Disconnected);
         self.set_status("");
+    }
+
+    fn check_node_timeouts(&self) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as u32;
+        let timeout = 2 * 60 * 60; // 2 hours
+
+        let nodes = self.nodes();
+        for i in 0..nodes.n_items() {
+            if let Some(obj) = nodes.item(i) {
+                if let Some(node) = obj.downcast_ref::<super::Node>() {
+                    let lh = node.last_heard();
+                    if lh > 0 && now.saturating_sub(lh) > timeout && node.is_online() {
+                        node.set_is_online(false);
+                    }
+                }
+            }
+        }
+    }
+
+    pub(crate) fn set_active_channel(&self, index: Option<u32>) {
+        self.imp().active_channel_index.set(index);
+        // Clear unread when a channel is selected
+        if let Some(idx) = index {
+            if let Some(ch) = self.channel(idx) {
+                ch.clear_unread();
+            }
+        }
+    }
+
+    pub(crate) fn active_channel_index(&self) -> Option<u32> {
+        self.imp().active_channel_index.get()
     }
 
     pub(crate) fn send_text(&self, text: &str, channel_index: u32, destination: u32) {
@@ -421,6 +484,11 @@ impl Device {
                 node.set_short_name(&short_name);
                 node.set_hw_model(&hw_model);
                 node.set_is_online(true);
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as u32;
+                node.set_last_heard(now);
                 if self.config_loading() {
                     self.set_status(&format!(
                         "Loading nodes... ({})",
@@ -428,9 +496,9 @@ impl Device {
                     ));
                 }
             }
-            DeviceEvent::NodeMetrics { num, battery_level } => {
+            DeviceEvent::NodeMetrics { num, battery_level, voltage, channel_utilization, air_util_tx } => {
                 let node = self.nodes().add_or_update(num);
-                node.set_battery_level(battery_level);
+                node.set_device_metrics(battery_level, voltage, channel_utilization, air_util_tx);
             }
             DeviceEvent::NodePosition {
                 num,
@@ -507,6 +575,18 @@ impl Device {
 
                 // Persist to disk
                 message_store::append_message(channel_index, &message);
+
+                // Unread tracking + desktop notification for incoming messages
+                if direction == MessageDirection::Incoming {
+                    let is_active = self.active_channel_index() == Some(channel_index);
+                    if !is_active {
+                        if let Some(ch) = self.channel(channel_index) {
+                            ch.increment_unread();
+                        }
+                    }
+                    // Send desktop notification
+                    self.send_notification(&message);
+                }
 
                 if let Some(channel) = self.channel(channel_index) {
                     channel.messages().append(message);
@@ -606,6 +686,9 @@ async fn handle_payload(
                     .send(DeviceEvent::NodeMetrics {
                         num,
                         battery_level: metrics.battery_level.unwrap_or(0),
+                        voltage: metrics.voltage.unwrap_or(0.0),
+                        channel_utilization: metrics.channel_utilization.unwrap_or(0.0),
+                        air_util_tx: metrics.air_util_tx.unwrap_or(0.0),
                     })
                     .await?;
             }
@@ -685,6 +768,9 @@ async fn handle_payload(
                                 .send(DeviceEvent::NodeMetrics {
                                     num: from,
                                     battery_level: metrics.battery_level.unwrap_or(0),
+                                    voltage: metrics.voltage.unwrap_or(0.0),
+                                    channel_utilization: metrics.channel_utilization.unwrap_or(0.0),
+                                    air_util_tx: metrics.air_util_tx.unwrap_or(0.0),
                                 })
                                 .await?;
                         }

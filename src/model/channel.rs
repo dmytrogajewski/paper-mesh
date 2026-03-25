@@ -19,6 +19,7 @@ mod imp {
         pub(super) name: RefCell<String>,
         pub(super) role: Cell<u32>,
         pub(super) messages: OnceCell<MessageList>,
+        pub(super) unread_count: Cell<u32>,
     }
 
     #[glib::object_subclass]
@@ -36,6 +37,7 @@ mod imp {
                     glib::ParamSpecUInt::builder("index").read_only().build(),
                     glib::ParamSpecString::builder("name").read_only().build(),
                     glib::ParamSpecUInt::builder("role").read_only().build(),
+                    glib::ParamSpecUInt::builder("unread-count").read_only().build(),
                 ]
             })
         }
@@ -46,6 +48,7 @@ mod imp {
                 "index" => obj.index().to_value(),
                 "name" => obj.name().to_value(),
                 "role" => obj.role().to_value(),
+                "unread-count" => obj.unread_count().to_value(),
                 _ => unimplemented!(),
             }
         }
@@ -97,6 +100,21 @@ impl Channel {
     pub(crate) fn set_role(&self, role: u32) {
         self.imp().role.set(role);
         self.notify("role");
+    }
+
+    pub(crate) fn unread_count(&self) -> u32 {
+        self.imp().unread_count.get()
+    }
+
+    pub(crate) fn increment_unread(&self) {
+        let count = self.imp().unread_count.get() + 1;
+        self.imp().unread_count.set(count);
+        self.notify("unread-count");
+    }
+
+    pub(crate) fn clear_unread(&self) {
+        self.imp().unread_count.set(0);
+        self.notify("unread-count");
     }
 
     /// Whether this channel is active (has a role other than DISABLED=0)

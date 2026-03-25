@@ -2,6 +2,7 @@ mod add_channel_dialog;
 mod content;
 mod map_view;
 mod node_row;
+mod share_channel_dialog;
 mod sidebar;
 mod sidebar_row;
 mod message_row;
@@ -20,6 +21,7 @@ pub(crate) use self::content::Content;
 pub(crate) use self::map_view::MapView;
 pub(crate) use self::message_row::MessageRow;
 pub(crate) use self::node_row::NodeRow;
+pub(crate) use self::share_channel_dialog::ShareChannelDialog;
 pub(crate) use self::sidebar::Sidebar;
 pub(crate) use self::sidebar_row::SidebarRow;
 
@@ -95,6 +97,7 @@ impl Session {
                 let channel_index: u32 = values[1].get().unwrap();
                 if let Some(device) = obj.imp().device.borrow().as_ref() {
                     if let Some(channel) = device.channel(channel_index) {
+                        device.set_active_channel(Some(channel_index));
                         obj.imp().content.set_channel(device, &channel);
                         obj.imp().header_title.set_title(&channel.name());
                         obj.imp().split_view.set_show_content(true);

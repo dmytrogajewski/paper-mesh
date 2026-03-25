@@ -5,6 +5,8 @@ mod message_list;
 pub(crate) mod message_store;
 mod node;
 mod node_list;
+pub(crate) mod range_test;
+pub(crate) mod telemetry;
 mod waypoint;
 mod waypoint_list;
 

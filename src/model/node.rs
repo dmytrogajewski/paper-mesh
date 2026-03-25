@@ -5,6 +5,7 @@ use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 
+use super::telemetry::{TelemetryHistory, TelemetryPoint};
 use crate::types::NodeId;
 
 mod imp {
@@ -23,6 +24,10 @@ mod imp {
         pub(super) longitude: Cell<f64>,
         pub(super) altitude: Cell<i32>,
         pub(super) is_online: Cell<bool>,
+        pub(super) voltage: Cell<f32>,
+        pub(super) channel_utilization: Cell<f32>,
+        pub(super) air_util_tx: Cell<f32>,
+        pub(super) telemetry: TelemetryHistory,
     }
 
     #[glib::object_subclass]
@@ -160,6 +165,36 @@ impl Node {
     pub(crate) fn set_is_online(&self, online: bool) {
         self.imp().is_online.set(online);
         self.notify("is-online");
+    }
+
+    pub(crate) fn voltage(&self) -> f32 {
+        self.imp().voltage.get()
+    }
+
+    pub(crate) fn set_device_metrics(&self, battery: u32, voltage: f32, ch_util: f32, air_tx: f32) {
+        let imp = self.imp();
+        imp.battery_level.set(battery);
+        imp.voltage.set(voltage);
+        imp.channel_utilization.set(ch_util);
+        imp.air_util_tx.set(air_tx);
+        self.notify("battery-level");
+
+        // Record telemetry point
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as u32;
+        imp.telemetry.add(TelemetryPoint {
+            timestamp: ts,
+            battery_level: battery,
+            voltage,
+            channel_utilization: ch_util,
+            air_util_tx: air_tx,
+        });
+    }
+
+    pub(crate) fn telemetry(&self) -> &TelemetryHistory {
+        &self.imp().telemetry
     }
 
     /// Display name: long_name if available, otherwise hex node number

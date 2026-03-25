@@ -1,0 +1,72 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $PaplShareChannelDialog: Adw.Dialog {
+  title: "Share Channel";
+  content-width: 360;
+
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      show-end-title-buttons: true;
+      show-start-title-buttons: false;
+    }
+
+    content: Adw.Clamp {
+      maximum-size: 340;
+      margin-top: 12;
+      margin-bottom: 24;
+      margin-start: 12;
+      margin-end: 12;
+
+      child: Box {
+        orientation: vertical;
+        spacing: 16;
+        halign: center;
+
+        Label channel_name_label {
+          styles [
+            "title-2",
+          ]
+        }
+
+        Picture qr_picture {
+          width-request: 256;
+          height-request: 256;
+          halign: center;
+          content-fit: contain;
+        }
+
+        Adw.PreferencesGroup {
+          Adw.ActionRow url_row {
+            title: "Channel URL";
+            subtitle-selectable: true;
+
+            [suffix]
+            Button copy_button {
+              icon-name: "edit-copy-symbolic";
+              valign: center;
+              tooltip-text: "Copy URL";
+              action-name: "share.copy-url";
+
+              styles [
+                "flat",
+              ]
+            }
+          }
+        }
+
+        Label hint_label {
+          label: "Other Meshtastic devices can scan this QR code or open the URL to join this channel.";
+          wrap: true;
+          justify: center;
+
+          styles [
+            "dim-label",
+            "caption",
+          ]
+        }
+      };
+    };
+  };
+}

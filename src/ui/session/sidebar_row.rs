@@ -1,6 +1,7 @@
 use std::cell::Cell;
 
 use adw::subclass::prelude::*;
+use glib::clone;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::CompositeTemplate;
@@ -17,6 +18,8 @@ mod imp {
         pub(super) channel_name_label: TemplateChild<gtk::Label>,
         #[template_child]
         pub(super) channel_index_label: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub(super) unread_badge: TemplateChild<gtk::Label>,
         pub(super) channel_index: Cell<u32>,
     }
 
@@ -52,10 +55,32 @@ impl SidebarRow {
         let imp = obj.imp();
 
         imp.channel_name_label.set_label(&channel.name());
-        imp.channel_index_label.set_label(&format!("Ch {}", channel.index()));
+        imp.channel_index_label
+            .set_label(&format!("Ch {}", channel.index()));
         imp.channel_index.set(channel.index());
 
+        // Update unread badge
+        obj.update_unread(channel.unread_count());
+
+        // Listen for unread changes
+        channel.connect_notify_local(
+            Some("unread-count"),
+            clone!(@weak obj => move |channel, _| {
+                obj.update_unread(channel.unread_count());
+            }),
+        );
+
         obj
+    }
+
+    fn update_unread(&self, count: u32) {
+        let badge = &self.imp().unread_badge;
+        if count > 0 {
+            badge.set_label(&format!("{}", count.min(99)));
+            badge.set_visible(true);
+        } else {
+            badge.set_visible(false);
+        }
     }
 
     pub(crate) fn channel_index(&self) -> u32 {
