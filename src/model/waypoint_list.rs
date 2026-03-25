@@ -68,3 +68,58 @@ impl WaypointList {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gtk::prelude::*;
+
+    fn init_gtk() { crate::test_helpers::init_gtk(); }
+
+    #[test]
+    fn test_empty_list() {
+        init_gtk();
+        let list = WaypointList::default();
+        assert_eq!(list.n_items(), 0);
+    }
+
+    #[test]
+    fn test_add_waypoint() {
+        init_gtk();
+        let list = WaypointList::default();
+        let wp = Waypoint::new(1, "WP1", "desc", 51.5, -0.1, 0, 0, 100);
+        list.add_or_update(wp);
+        assert_eq!(list.n_items(), 1);
+
+        let item = list.item(0).unwrap();
+        let wp = item.downcast_ref::<Waypoint>().unwrap();
+        assert_eq!(wp.name(), "WP1");
+    }
+
+    #[test]
+    fn test_update_existing_waypoint() {
+        init_gtk();
+        let list = WaypointList::default();
+
+        let wp1 = Waypoint::new(1, "Old", "old desc", 0.0, 0.0, 0, 0, 0);
+        list.add_or_update(wp1);
+
+        let wp2 = Waypoint::new(1, "New", "new desc", 1.0, 1.0, 0, 0, 0);
+        list.add_or_update(wp2);
+
+        assert_eq!(list.n_items(), 1);
+        let item = list.item(0).unwrap();
+        let wp = item.downcast_ref::<Waypoint>().unwrap();
+        assert_eq!(wp.name(), "New");
+    }
+
+    #[test]
+    fn test_multiple_waypoints() {
+        init_gtk();
+        let list = WaypointList::default();
+        list.add_or_update(Waypoint::new(1, "A", "", 0.0, 0.0, 0, 0, 0));
+        list.add_or_update(Waypoint::new(2, "B", "", 0.0, 0.0, 0, 0, 0));
+        list.add_or_update(Waypoint::new(3, "C", "", 0.0, 0.0, 0, 0, 0));
+        assert_eq!(list.n_items(), 3);
+    }
+}

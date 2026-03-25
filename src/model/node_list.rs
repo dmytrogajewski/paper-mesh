@@ -83,3 +83,71 @@ impl NodeList {
         self.imp().nodes.borrow().len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gtk::prelude::*;
+
+    fn init_gtk() { crate::test_helpers::init_gtk(); }
+
+    #[test]
+    fn test_empty_list() {
+        init_gtk();
+        let list = NodeList::default();
+        assert_eq!(list.len(), 0);
+        assert!(list.find_by_num(1).is_none());
+        assert_eq!(list.n_items(), 0);
+    }
+
+    #[test]
+    fn test_add_node() {
+        init_gtk();
+        let list = NodeList::default();
+        let node = list.add_or_update(42);
+        assert_eq!(node.num(), 42);
+        assert_eq!(list.len(), 1);
+        assert_eq!(list.n_items(), 1);
+    }
+
+    #[test]
+    fn test_add_duplicate_returns_existing() {
+        init_gtk();
+        let list = NodeList::default();
+        let n1 = list.add_or_update(10);
+        n1.set_long_name("First");
+        let n2 = list.add_or_update(10);
+        assert_eq!(n2.long_name(), "First");
+        assert_eq!(list.len(), 1);
+    }
+
+    #[test]
+    fn test_find_by_num() {
+        init_gtk();
+        let list = NodeList::default();
+        list.add_or_update(1);
+        list.add_or_update(2);
+        list.add_or_update(3);
+
+        assert!(list.find_by_num(2).is_some());
+        assert!(list.find_by_num(99).is_none());
+    }
+
+    #[test]
+    fn test_list_model_item() {
+        init_gtk();
+        let list = NodeList::default();
+        list.add_or_update(100);
+        list.add_or_update(200);
+
+        let item = list.item(0).unwrap();
+        let node = item.downcast_ref::<Node>().unwrap();
+        assert_eq!(node.num(), 100);
+
+        let item = list.item(1).unwrap();
+        let node = item.downcast_ref::<Node>().unwrap();
+        assert_eq!(node.num(), 200);
+
+        assert!(list.item(2).is_none());
+    }
+}

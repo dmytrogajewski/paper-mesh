@@ -7,6 +7,8 @@ mod ui;
 mod config;
 mod i18n;
 mod model;
+#[cfg(test)]
+mod test_helpers;
 mod types;
 mod utils;
 

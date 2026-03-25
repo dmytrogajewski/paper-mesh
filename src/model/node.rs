@@ -172,3 +172,64 @@ impl Node {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn init_gtk() { crate::test_helpers::init_gtk(); }
+
+    #[test]
+    fn test_node_creation() {
+        init_gtk();
+        let node = Node::new(0xDEADBEEF);
+        assert_eq!(node.num(), 0xDEADBEEF);
+        assert_eq!(node.long_name(), "");
+        assert_eq!(node.short_name(), "");
+        assert_eq!(node.hw_model(), "");
+        assert_eq!(node.battery_level(), 0);
+        assert!(!node.is_online());
+    }
+
+    #[test]
+    fn test_node_display_name_fallback() {
+        init_gtk();
+        let node = Node::new(0x00001234);
+        assert_eq!(node.display_name(), "!00001234");
+
+        node.set_long_name("Alice");
+        assert_eq!(node.display_name(), "Alice");
+    }
+
+    #[test]
+    fn test_node_setters() {
+        init_gtk();
+        let node = Node::new(1);
+
+        node.set_long_name("Bob");
+        assert_eq!(node.long_name(), "Bob");
+
+        node.set_short_name("BO");
+        assert_eq!(node.short_name(), "BO");
+
+        node.set_hw_model("TBEAM");
+        assert_eq!(node.hw_model(), "TBEAM");
+
+        node.set_battery_level(85);
+        assert_eq!(node.battery_level(), 85);
+
+        node.set_snr(6.5);
+        assert_eq!(node.snr(), 6.5);
+
+        node.set_last_heard(999);
+        assert_eq!(node.last_heard(), 999);
+
+        node.set_is_online(true);
+        assert!(node.is_online());
+
+        node.set_position(51.5, -0.1, 100);
+        assert_eq!(node.latitude(), 51.5);
+        assert_eq!(node.longitude(), -0.1);
+        assert_eq!(node.altitude(), 100);
+    }
+}

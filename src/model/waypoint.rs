@@ -90,3 +90,22 @@ impl Waypoint {
     pub(crate) fn longitude(&self) -> f64 { self.imp().longitude.get() }
     pub(crate) fn from_node(&self) -> u32 { self.imp().from_node.get() }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn init_gtk() { crate::test_helpers::init_gtk(); }
+
+    #[test]
+    fn test_waypoint_creation() {
+        init_gtk();
+        let wp = Waypoint::new(1, "Camp", "Base camp", 51.5, -0.1, 0, 0, 100);
+        assert_eq!(wp.id(), 1);
+        assert_eq!(wp.name(), "Camp");
+        assert_eq!(wp.description(), "Base camp");
+        assert_eq!(wp.latitude(), 51.5);
+        assert_eq!(wp.longitude(), -0.1);
+        assert_eq!(wp.from_node(), 100);
+    }
+}

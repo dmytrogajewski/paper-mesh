@@ -82,7 +82,7 @@ pub(crate) fn ancestor<W: IsA<gtk::Widget>, T: IsA<gtk::Widget>>(widget: &W) -> 
         .unwrap()
 }
 
-/// Format a unix timestamp into a human-readable time string
+/// Format a unix timestamp into a human-readable time string (HH:MM local time)
 pub(crate) fn format_timestamp(secs: u32) -> String {
     use chrono::prelude::*;
     let dt = DateTime::from_timestamp(secs as i64, 0);
@@ -92,5 +92,75 @@ pub(crate) fn format_timestamp(secs: u32) -> String {
             local.format("%H:%M").to_string()
         }
         None => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_escape_ampersand() {
+        assert_eq!(escape("a & b"), "a &amp; b");
+    }
+
+    #[test]
+    fn test_escape_angle_brackets() {
+        assert_eq!(escape("<script>"), "&lt;script&gt;");
+    }
+
+    #[test]
+    fn test_escape_quotes() {
+        assert_eq!(escape(r#"he said "hi""#), "he said &quot;hi&quot;");
+        assert_eq!(escape("it's"), "it&apos;s");
+    }
+
+    #[test]
+    fn test_escape_no_change() {
+        assert_eq!(escape("plain text 123"), "plain text 123");
+    }
+
+    #[test]
+    fn test_escape_empty() {
+        assert_eq!(escape(""), "");
+    }
+
+    #[test]
+    fn test_freplace_single() {
+        let result = freplace("Hello {name}!".into(), &[("name", "Alice")]);
+        assert_eq!(result, "Hello Alice!");
+    }
+
+    #[test]
+    fn test_freplace_multiple() {
+        let result = freplace("{a} and {b}".into(), &[("a", "X"), ("b", "Y")]);
+        assert_eq!(result, "X and Y");
+    }
+
+    #[test]
+    fn test_freplace_no_match() {
+        let result = freplace("no vars here".into(), &[("x", "y")]);
+        assert_eq!(result, "no vars here");
+    }
+
+    #[test]
+    fn test_freplace_empty_args() {
+        let result = freplace("{x}".into(), &[]);
+        assert_eq!(result, "{x}");
+    }
+
+    #[test]
+    fn test_format_timestamp_valid() {
+        let result = format_timestamp(1700000000);
+        // Should be a time string like "HH:MM" — just check format
+        assert!(result.contains(':'), "Expected HH:MM format, got: {result}");
+        assert!(result.len() == 5, "Expected 5 chars, got: {result}");
+    }
+
+    #[test]
+    fn test_format_timestamp_zero() {
+        let result = format_timestamp(0);
+        // Epoch 0 is valid — 1970-01-01 00:00 UTC
+        assert!(result.contains(':'));
     }
 }

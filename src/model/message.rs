@@ -153,3 +153,62 @@ impl MeshMessage {
         self.imp().hop_start.get().saturating_sub(self.imp().hop_limit.get())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn init_gtk() { crate::test_helpers::init_gtk(); }
+
+    #[test]
+    fn test_message_creation() {
+        init_gtk();
+        let msg = MeshMessage::new(42, 100, 200, 3, "hello", 1000, MessageDirection::Incoming);
+        assert_eq!(msg.packet_id(), 42);
+        assert_eq!(msg.from_node(), 100);
+        assert_eq!(msg.to_node(), 200);
+        assert_eq!(msg.channel_index(), 3);
+        assert_eq!(msg.text(), "hello");
+        assert_eq!(msg.timestamp(), 1000);
+        assert_eq!(msg.direction(), MessageDirection::Incoming);
+    }
+
+    #[test]
+    fn test_message_outgoing() {
+        init_gtk();
+        let msg = MeshMessage::new(1, 0, 0, 0, "out", 0, MessageDirection::Outgoing);
+        assert_eq!(msg.direction(), MessageDirection::Outgoing);
+    }
+
+    #[test]
+    fn test_radio_info() {
+        init_gtk();
+        let msg = MeshMessage::new(1, 0, 0, 0, "", 0, MessageDirection::Incoming);
+        msg.set_radio_info(6.5, -80, 3, 1);
+        assert_eq!(msg.snr(), 6.5);
+        assert_eq!(msg.rssi(), -80);
+        assert_eq!(msg.hops(), 2); // 3 - 1
+    }
+
+    #[test]
+    fn test_hops_no_underflow() {
+        init_gtk();
+        let msg = MeshMessage::new(1, 0, 0, 0, "", 0, MessageDirection::Incoming);
+        msg.set_radio_info(0.0, 0, 0, 5);
+        assert_eq!(msg.hops(), 0); // saturating_sub
+    }
+
+    #[test]
+    fn test_sender_name() {
+        init_gtk();
+        let msg = MeshMessage::new(1, 0, 0, 0, "", 0, MessageDirection::Incoming);
+        assert_eq!(msg.sender_name(), "");
+        msg.set_sender_name("Alice");
+        assert_eq!(msg.sender_name(), "Alice");
+    }
+
+    #[test]
+    fn test_default_direction() {
+        assert_eq!(MessageDirection::default(), MessageDirection::Incoming);
+    }
+}

@@ -104,3 +104,64 @@ impl Channel {
         self.role() != 0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn init_gtk() { crate::test_helpers::init_gtk(); }
+
+    #[test]
+    fn test_channel_creation() {
+        init_gtk();
+        let ch = Channel::new(0);
+        assert_eq!(ch.index(), 0);
+        assert_eq!(ch.role(), 0);
+        assert!(!ch.is_active());
+    }
+
+    #[test]
+    fn test_primary_channel_default_name() {
+        init_gtk();
+        let ch = Channel::new(0);
+        assert_eq!(ch.name(), "Primary");
+    }
+
+    #[test]
+    fn test_secondary_channel_default_name() {
+        init_gtk();
+        let ch = Channel::new(3);
+        assert_eq!(ch.name(), "Channel 3");
+    }
+
+    #[test]
+    fn test_custom_name() {
+        init_gtk();
+        let ch = Channel::new(1);
+        ch.set_name("MyChannel");
+        assert_eq!(ch.name(), "MyChannel");
+    }
+
+    #[test]
+    fn test_active_role() {
+        init_gtk();
+        let ch = Channel::new(0);
+        assert!(!ch.is_active());
+
+        ch.set_role(1); // PRIMARY
+        assert!(ch.is_active());
+
+        ch.set_role(2); // SECONDARY
+        assert!(ch.is_active());
+
+        ch.set_role(0); // DISABLED
+        assert!(!ch.is_active());
+    }
+
+    #[test]
+    fn test_messages_list() {
+        init_gtk();
+        let ch = Channel::new(0);
+        assert_eq!(ch.messages().len(), 0);
+    }
+}
