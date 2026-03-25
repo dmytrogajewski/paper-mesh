@@ -158,12 +158,61 @@ impl Content {
         self.clear_dm_target();
     }
 
-    /// Set a DM target node
-    pub(crate) fn set_dm_target(&self, node_num: u32, device: &model::Device) {
+    /// Set up DM view for a specific node — shows only messages to/from this node
+    pub(crate) fn set_dm_node(&self, device: &model::Device, node_num: u32) {
         let imp = self.imp();
+
+        // Disconnect old signal handlers
+        if let Some(old_channel) = imp.channel.borrow().as_ref() {
+            let old_messages = old_channel.messages();
+            for handler_id in imp.signal_handlers.borrow_mut().drain(..) {
+                old_messages.disconnect(handler_id);
+            }
+        }
+
+        imp.device.replace(Some(device.clone()));
+
+        // Use primary channel for sending DMs
+        let send_channel = device.channel(0);
+        imp.channel.replace(send_channel);
+
+        // Build a filtered message list: only messages to/from this node across all channels
+        let dm_messages = model::MessageList::default();
+        let my_num = device.my_node_num();
+        for ch in device.channels() {
+            let msgs = ch.messages();
+            for i in 0..msgs.n_items() {
+                if let Some(obj) = msgs.item(i) {
+                    if let Some(msg) = obj.downcast_ref::<model::MeshMessage>() {
+                        let from = msg.from_node();
+                        let to = msg.to_node();
+                        // Show messages sent by this node, or sent TO this node by us
+                        if from == node_num || (from == my_num && to == node_num) {
+                            dm_messages.append(msg.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Set model
+        imp.message_list_view.set_model(gtk::SelectionModel::NONE);
+        let selection = gtk::NoSelection::new(Some(dm_messages.clone()));
+        imp.message_list_view.set_model(Some(&selection));
+
+        let has_messages = dm_messages.n_items() > 0;
+        imp.content_stack
+            .set_visible_child_name(if has_messages { "messages" } else { "empty" });
+
+        if has_messages {
+            let n = dm_messages.n_items();
+            imp.message_list_view
+                .scroll_to(n - 1, gtk::ListScrollFlags::NONE, None);
+        }
+
+        // Set DM target
         imp.dm_target.set(node_num);
         imp.dm_bar.set_visible(true);
-
         let name = if let Some(node) = device.nodes().find_by_num(node_num) {
             node.display_name()
         } else {

@@ -104,26 +104,22 @@ impl Session {
             }),
         );
 
-        // When a node is selected, set up DM to that node on the primary channel
+        // When a node is selected, show DM view for that node
         imp.sidebar.connect_local(
             "node-selected",
             false,
             clone!(@weak self as obj => @default-return None, move |values| {
                 let node_num: u32 = values[1].get().unwrap();
                 if let Some(device) = obj.imp().device.borrow().as_ref() {
-                    // Use primary channel (index 0) for DMs
-                    if let Some(channel) = device.channel(0) {
-                        obj.imp().content.set_channel(device, &channel);
-                        obj.imp().content.set_dm_target(node_num, device);
+                    obj.imp().content.set_dm_node(device, node_num);
 
-                        let name = if let Some(node) = device.nodes().find_by_num(node_num) {
-                            format!("DM: {}", node.display_name())
-                        } else {
-                            format!("DM: !{:08x}", node_num)
-                        };
-                        obj.imp().header_title.set_title(&name);
-                        obj.imp().split_view.set_show_content(true);
-                    }
+                    let name = if let Some(node) = device.nodes().find_by_num(node_num) {
+                        format!("DM: {}", node.display_name())
+                    } else {
+                        format!("DM: !{:08x}", node_num)
+                    };
+                    obj.imp().header_title.set_title(&name);
+                    obj.imp().split_view.set_show_content(true);
                 }
                 None
             }),
