@@ -1,0 +1,82 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $PaplAddChannelDialog: Adw.Dialog {
+  title: "Add Channel";
+  content-width: 360;
+
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      show-end-title-buttons: false;
+      show-start-title-buttons: false;
+
+      [start]
+      Button cancel_button {
+        label: "Cancel";
+      }
+
+      [end]
+      Button create_button {
+        label: "Create";
+
+        styles [
+          "suggested-action",
+        ]
+      }
+    }
+
+    content: Adw.Clamp {
+      maximum-size: 360;
+      margin-top: 12;
+      margin-bottom: 12;
+      margin-start: 12;
+      margin-end: 12;
+
+      child: Box {
+        orientation: vertical;
+        spacing: 18;
+
+        Adw.PreferencesGroup {
+          title: "Channel Settings";
+
+          Adw.EntryRow name_entry {
+            title: "Name";
+          }
+
+          Adw.ComboRow slot_row {
+            title: "Channel Slot";
+            model: StringList slot_model {};
+          }
+        }
+
+        Adw.PreferencesGroup {
+          title: "Encryption";
+
+          Adw.ComboRow psk_type_row {
+            title: "Key Type";
+            model: StringList {
+              strings [
+                "Default (AES128)",
+                "Simple (Minimal)",
+                "Random AES256",
+                "No Encryption",
+              ]
+            };
+          }
+        }
+
+        Label info_label {
+          label: "The device will restart after creating the channel. You'll need to reconnect.";
+          wrap: true;
+          justify: center;
+
+          styles [
+            "dim-label",
+            "caption",
+          ]
+        }
+      };
+    };
+  };
+}

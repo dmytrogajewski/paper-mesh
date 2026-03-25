@@ -1,38 +1,55 @@
 using Gtk 4.0;
 using Adw 1;
 
-template $Session : Adw.Bin {
-  child: Adw.BreakpointBin {
-    width-request: 360;
-    height-request: 200;
+template $PaplSession: Adw.Bin {
+  child: Adw.NavigationSplitView split_view {
+    min-sidebar-width: 260;
+    max-sidebar-width: 400;
 
-    child: Adw.NavigationSplitView split_view {
-      min-sidebar-width: 260;
-      max-sidebar-width: 340;
-      sidebar-width-fraction: 0.4;
+    sidebar: Adw.NavigationPage {
+      title: "Mesh";
+      tag: "sidebar";
 
-      sidebar: Adw.NavigationPage {
-        title: _("Chats");
+      child: Adw.ToolbarView {
+        [top]
+        Adw.HeaderBar {
+          [start]
+          Button {
+            icon-name: "system-shutdown-symbolic";
+            tooltip-text: "Disconnect";
+            action-name: "session.disconnect";
+          }
 
-        child: $PaplSidebar sidebar {
-          compact: bind split_view.collapsed;
-          selected-chat: bind-property content.chat bidirectional;
-          session: bind template.model;
-        };
-      };
+          [end]
+          Button {
+            icon-name: "list-add-symbolic";
+            tooltip-text: "Add Channel";
+            action-name: "session.add-channel";
+          }
 
-      content: Adw.NavigationPage {
-        tag: "content";
-        title: _("Content");
-        child: $Content content {};
+          title-widget: Adw.WindowTitle {
+            title: "Meshtastic";
+          };
+        }
+
+        content: $PaplSidebar sidebar {};
       };
     };
 
-    Adw.Breakpoint {
-      condition ("max-width: 560sp")
-      setters {
-        split_view.collapsed: true;
-      }
-    }
+    content: Adw.NavigationPage {
+      title: "Messages";
+      tag: "content";
+
+      child: Adw.ToolbarView {
+        [top]
+        Adw.HeaderBar {
+          title-widget: Adw.WindowTitle header_title {
+            title: "Select a channel";
+          };
+        }
+
+        content: $PaplContent content {};
+      };
+    };
   };
 }

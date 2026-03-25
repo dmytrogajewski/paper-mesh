@@ -1,0 +1,41 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $PaplSidebarRow: ListBoxRow {
+  child: Box {
+    orientation: horizontal;
+    spacing: 8;
+    margin-start: 8;
+    margin-end: 8;
+    margin-top: 6;
+    margin-bottom: 6;
+
+    Image {
+      icon-name: "network-wireless-symbolic";
+    }
+
+    Box {
+      orientation: vertical;
+      hexpand: true;
+      spacing: 2;
+
+      Label channel_name_label {
+        xalign: 0;
+        ellipsize: end;
+
+        styles [
+          "heading",
+        ]
+      }
+
+      Label channel_index_label {
+        xalign: 0;
+
+        styles [
+          "dim-label",
+          "caption",
+        ]
+      }
+    }
+  };
+}

@@ -1,0 +1,71 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $PaplMessageRow: Box {
+  orientation: vertical;
+  margin-start: 8;
+  margin-end: 8;
+  margin-top: 2;
+  margin-bottom: 2;
+
+  Box message_box {
+    orientation: vertical;
+    spacing: 2;
+    halign: start;
+
+    styles [
+      "card",
+    ]
+
+    Box {
+      orientation: horizontal;
+      spacing: 8;
+      margin-start: 8;
+      margin-end: 8;
+      margin-top: 4;
+
+      Label sender_label {
+        xalign: 0;
+        ellipsize: end;
+
+        styles [
+          "heading",
+          "caption",
+        ]
+      }
+
+      Label time_label {
+        xalign: 1;
+        hexpand: true;
+
+        styles [
+          "dim-label",
+          "caption",
+        ]
+      }
+    }
+
+    Label text_label {
+      xalign: 0;
+      wrap: true;
+      wrap-mode: word_char;
+      selectable: true;
+      margin-start: 8;
+      margin-end: 8;
+      margin-bottom: 4;
+    }
+
+    Label info_label {
+      xalign: 0;
+      visible: false;
+      margin-start: 8;
+      margin-end: 8;
+      margin-bottom: 4;
+
+      styles [
+        "dim-label",
+        "caption",
+      ]
+    }
+  }
+}

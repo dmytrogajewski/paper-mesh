@@ -1,0 +1,49 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $PaplContent: Adw.Bin {
+  child: Box {
+    orientation: vertical;
+
+    Stack content_stack {
+      vexpand: true;
+
+      StackPage {
+        name: "empty";
+        child: Label empty_label {
+          label: "Select a channel to start chatting";
+          valign: center;
+          hexpand: true;
+
+          styles [
+            "dim-label",
+            "title-3",
+          ]
+        };
+      }
+
+      StackPage {
+        name: "messages";
+        child: ScrolledWindow {
+          hscrollbar-policy: never;
+          vexpand: true;
+
+          child: ListView message_list_view {
+            styles [
+              "background",
+            ]
+          };
+        };
+      }
+    }
+
+    Separator {}
+
+    $PaplMessageEntry message_entry {
+      margin-start: 8;
+      margin-end: 8;
+      margin-top: 4;
+      margin-bottom: 4;
+    }
+  };
+}

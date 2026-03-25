@@ -1,0 +1,129 @@
+use adw::subclass::prelude::*;
+use glib::clone;
+use gtk::glib;
+use gtk::prelude::*;
+use gtk::CompositeTemplate;
+
+use crate::model;
+use crate::ui;
+
+mod imp {
+    use std::cell::RefCell;
+
+    use super::*;
+
+    #[derive(Debug, Default, CompositeTemplate)]
+    #[template(resource = "/app/drey/paper-mesh/ui/session/content.ui")]
+    pub(crate) struct Content {
+        #[template_child]
+        pub(super) message_list_view: TemplateChild<gtk::ListView>,
+        #[template_child]
+        pub(super) message_entry: TemplateChild<ui::MessageEntry>,
+        #[template_child]
+        pub(super) empty_label: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub(super) content_stack: TemplateChild<gtk::Stack>,
+        pub(super) device: RefCell<Option<model::Device>>,
+        pub(super) channel: RefCell<Option<model::Channel>>,
+    }
+
+    #[glib::object_subclass]
+    impl ObjectSubclass for Content {
+        const NAME: &'static str = "PaplContent";
+        type Type = super::Content;
+        type ParentType = adw::Bin;
+
+        fn class_init(klass: &mut Self::Class) {
+            ui::MessageRow::ensure_type();
+            ui::MessageEntry::ensure_type();
+            Self::bind_template(klass);
+
+            klass.install_action("content.send-message", None, move |obj, _, _| {
+                obj.send_message();
+            });
+        }
+
+        fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
+            obj.init_template();
+        }
+    }
+
+    impl ObjectImpl for Content {}
+    impl WidgetImpl for Content {}
+    impl BinImpl for Content {}
+}
+
+glib::wrapper! {
+    pub(crate) struct Content(ObjectSubclass<imp::Content>)
+        @extends gtk::Widget, adw::Bin,
+        @implements gtk::Accessible;
+}
+
+impl Content {
+    pub(crate) fn set_channel(&self, device: &model::Device, channel: &model::Channel) {
+        let imp = self.imp();
+        imp.device.replace(Some(device.clone()));
+        imp.channel.replace(Some(channel.clone()));
+
+        let messages = channel.messages();
+
+        let factory = gtk::SignalListItemFactory::new();
+        factory.connect_setup(|_, list_item| {
+            let list_item = list_item.downcast_ref::<gtk::ListItem>().unwrap();
+            list_item.set_child(Some(&ui::MessageRow::new()));
+        });
+        factory.connect_bind(|_, list_item| {
+            let list_item = list_item.downcast_ref::<gtk::ListItem>().unwrap();
+            let message = list_item.item().and_downcast::<model::MeshMessage>().unwrap();
+            let row = list_item.child().and_downcast::<ui::MessageRow>().unwrap();
+            row.set_message(&message);
+        });
+
+        let selection = gtk::NoSelection::new(Some(messages.clone()));
+        imp.message_list_view.set_model(Some(&selection));
+        imp.message_list_view.set_factory(Some(&factory));
+
+        // Auto-scroll to bottom when new messages arrive
+        let list_view = imp.message_list_view.clone();
+        messages.connect_items_changed(
+            clone!(@weak list_view => move |model, _, _, _| {
+                let n = model.n_items();
+                if n > 0 {
+                    list_view.scroll_to(n - 1, gtk::ListScrollFlags::NONE, None);
+                }
+            }),
+        );
+
+        // Show message list or empty state
+        if messages.n_items() > 0 {
+            imp.content_stack.set_visible_child_name("messages");
+        } else {
+            imp.content_stack.set_visible_child_name("empty");
+        }
+
+        let content_stack = imp.content_stack.clone();
+        messages.connect_items_changed(
+            clone!(@weak content_stack as stack => move |model, _, _, _| {
+                if model.n_items() > 0 {
+                    stack.set_visible_child_name("messages");
+                }
+            }),
+        );
+    }
+
+    fn send_message(&self) {
+        let imp = self.imp();
+        let text = imp.message_entry.text();
+        if text.is_empty() {
+            return;
+        }
+
+        let device = imp.device.borrow();
+        let channel = imp.channel.borrow();
+
+        if let (Some(device), Some(channel)) = (device.as_ref(), channel.as_ref()) {
+            device.send_text(&text, channel.index(), 0xFFFFFFFF); // broadcast
+            imp.message_entry.clear();
+        }
+    }
+}

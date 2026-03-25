@@ -1,11 +1,11 @@
 [Desktop Entry]
-Name=Paper Plane
-Comment=Chat over Telegram on a modern and elegant client
+Name=Paper Mesh
+Comment=Chat over Meshtastic mesh network
 Type=Application
-Exec=paper-plane
+Exec=paper-mesh
 Terminal=false
-Categories=GNOME;GTK;Chat;Network;InstantMessaging;
-Keywords=Gnome;GTK;telegram;tg;chat;im;messaging;messenger;
+Categories=GNOME;GTK;Chat;Network;
+Keywords=Gnome;GTK;meshtastic;mesh;lora;chat;radio;
 # Translators: Do NOT translate or transliterate this text (this is an icon file name)!
 Icon=@icon@
 StartupNotify=true

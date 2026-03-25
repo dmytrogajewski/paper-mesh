@@ -1,0 +1,126 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $PaplConnectPage: Adw.Bin {
+  child: Adw.Clamp {
+    maximum-size: 400;
+    margin-top: 24;
+    margin-bottom: 24;
+    margin-start: 12;
+    margin-end: 12;
+
+    child: Box {
+      orientation: vertical;
+      spacing: 24;
+      valign: center;
+
+      Image {
+        icon-name: "network-wireless-symbolic";
+        pixel-size: 128;
+
+        styles [
+          "dim-label",
+        ]
+      }
+
+      Label {
+        label: "Connect to Meshtastic Device";
+
+        styles [
+          "title-1",
+        ]
+      }
+
+      Label {
+        label: "Select a serial device or enter a TCP address to connect to your Meshtastic radio.";
+        wrap: true;
+        justify: center;
+
+        styles [
+          "dim-label",
+        ]
+      }
+
+      Adw.PreferencesGroup {
+        Adw.ComboRow connection_type_row {
+          title: "Connection Type";
+          model: StringList {
+            strings [
+              "Serial",
+              "TCP",
+            ]
+          };
+        }
+      }
+
+      // Serial port selection
+      Adw.PreferencesGroup serial_group {
+        title: "Serial Device";
+
+        Adw.ComboRow serial_port_row {
+          title: "Port";
+          model: StringList serial_port_model {};
+        }
+
+        Adw.ActionRow {
+          title: "Scan for devices";
+          activatable-widget: refresh_button;
+
+          [suffix]
+          Button refresh_button {
+            icon-name: "view-refresh-symbolic";
+            valign: center;
+            action-name: "connect-page.refresh-ports";
+
+            styles [
+              "flat",
+            ]
+          }
+        }
+      }
+
+      // TCP address entry
+      Adw.PreferencesGroup tcp_group {
+        title: "TCP Connection";
+        visible: false;
+
+        Adw.EntryRow tcp_address_entry {
+          title: "Address (IP:PORT)";
+        }
+      }
+
+      Box {
+        orientation: vertical;
+        spacing: 12;
+        halign: center;
+
+        Button connect_button {
+          label: "Connect";
+          action-name: "connect-page.connect";
+
+          styles [
+            "suggested-action",
+            "pill",
+          ]
+        }
+
+        Box {
+          halign: center;
+          spacing: 8;
+
+          Spinner spinner {
+            spinning: false;
+          }
+
+          Label status_label {
+            label: "";
+
+            styles [
+              "dim-label",
+            ]
+          }
+        }
+      }
+    };
+  };
+}

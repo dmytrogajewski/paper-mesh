@@ -1,7 +1,7 @@
 project(
-  'paper-plane',
+  'paper-mesh',
   'rust',
-  version: '0.1.0-beta.5',
+  version: '0.2.0',
   meson_version: '>= 0.59',
 )
 
@@ -14,8 +14,6 @@ dependency('glib-2.0', version: '>= 2.72')
 dependency('gio-2.0', version: '>= 2.72')
 dependency('gtk4', version: '>= 4.12')
 dependency('libadwaita-1', version: '>= 1.4')
-dependency('shumate-1.0', version: '>= 1')
-dependency('tdjson', version: '== 1.8.19')
 
 glib_compile_resources = find_program('glib-compile-resources', required: true)
 glib_compile_schemas = find_program('glib-compile-schemas', required: true)
@@ -34,9 +32,6 @@ pkgdatadir = datadir / meson.project_name()
 iconsdir = datadir / 'icons'
 podir = meson.project_source_root() / 'po'
 gettext_package = meson.project_name()
-
-tg_api_id = get_option('tg_api_id')
-tg_api_hash = get_option('tg_api_hash')
 
 if get_option('profile') == 'development'
   profile = 'Devel'

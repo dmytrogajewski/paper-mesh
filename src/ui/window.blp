@@ -1,19 +1,25 @@
 using Gtk 4.0;
 using Adw 1;
 
-template $PaplWindow : Adw.ApplicationWindow {
-  width-request: 360;
-  height-request: 200;
+template $PaplWindow: Adw.ApplicationWindow {
   default-width: 900;
   default-height: 600;
+  width-request: 360;
+  height-request: 200;
 
-  EventControllerKey {
-    key-pressed => $on_key_pressed() swapped;
-  }
+  content: Adw.ToastOverlay toast_overlay {
+    child: Stack stack {
+      transition-type: crossfade;
 
-  notify::is_active => $on_notify_is_active() swapped;
+      StackPage {
+        name: "connect";
+        child: $PaplConnectPage connect_page {};
+      }
 
-  content: Adw.ToastOverlay {
-    $PaplClientManagerView client_manager_view {}
+      StackPage {
+        name: "session";
+        child: $PaplSession session {};
+      }
+    };
   };
 }

@@ -1,47 +1,54 @@
 using Gtk 4.0;
+using Adw 1;
 
-template $PaplMessageEntry {
-  layout-manager: BinLayout {};
+template $PaplMessageEntry: Box {
+  orientation: horizontal;
+  spacing: 4;
 
-  styles ["message-entry"]
+  styles [
+    "linked",
+  ]
 
-  Overlay overlay {
+  ScrolledWindow {
+    hexpand: true;
+    max-content-height: 100;
+    propagate-natural-height: true;
 
-    [overlay]
-    Inscription placeholder {
-      styles ["dim-label"]
+    child: TextView text_view {
+      wrap-mode: word_char;
+      top-margin: 6;
+      bottom-margin: 6;
+      left-margin: 8;
+      right-margin: 8;
+    };
+  }
 
-      can-target: false;
-      text-overflow: ellipsize_end;
+  Box {
+    orientation: vertical;
+    valign: end;
+    spacing: 4;
+    margin-end: 4;
+    margin-bottom: 4;
+
+    Label char_count {
+      label: "0/228";
+
+      styles [
+        "dim-label",
+        "caption",
+      ]
     }
 
-    Box {
-      css-name: "entry";
+    Button {
+      icon-name: "go-up-symbolic";
+      action-name: "content.send-message";
+      tooltip-text: "Send message";
+      valign: end;
 
-      styles ["small-pill"]
-
-      ScrolledWindow {
-        max-content-height: 200;
-        hscrollbar-policy: never;
-        propagate-natural-height: true;
-        hexpand: true;
-
-        child: TextView text_view {
-          top-margin: 6;
-          bottom-margin: 6;
-          wrap-mode: word_char;
-          valign: center;
-
-          GestureClick {
-            pressed => $on_gesture_click_pressed();
-          }
-        };
-      }
-
-      Image emoji_button {
-        icon-name: "emoji-people-symbolic";
-        valign: end;
-      }
+      styles [
+        "suggested-action",
+        "circular",
+      ]
     }
   }
 }

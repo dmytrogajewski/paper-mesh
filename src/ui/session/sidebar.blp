@@ -1,0 +1,116 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $PaplSidebar: Adw.Bin {
+  child: ScrolledWindow {
+    hscrollbar-policy: never;
+
+    child: Box {
+      orientation: vertical;
+      spacing: 0;
+
+      // Connection info banner
+      Box connection_banner {
+        orientation: vertical;
+        spacing: 2;
+        margin-start: 12;
+        margin-end: 12;
+        margin-top: 8;
+        margin-bottom: 8;
+
+        styles [
+          "card",
+        ]
+
+        Box {
+          orientation: horizontal;
+          spacing: 6;
+          margin-start: 8;
+          margin-end: 8;
+          margin-top: 6;
+
+          Image {
+            icon-name: "network-wireless-symbolic";
+
+            styles [
+              "success",
+            ]
+          }
+
+          Label connection_info_label {
+            xalign: 0;
+            ellipsize: end;
+            hexpand: true;
+
+            styles [
+              "caption",
+            ]
+          }
+        }
+
+        Box {
+          orientation: horizontal;
+          spacing: 6;
+          margin-start: 8;
+          margin-end: 8;
+          margin-bottom: 6;
+
+          Spinner loading_spinner {
+            spinning: false;
+          }
+
+          Label status_label {
+            xalign: 0;
+            ellipsize: end;
+            hexpand: true;
+
+            styles [
+              "caption",
+              "dim-label",
+            ]
+          }
+        }
+      }
+
+      Separator {
+        margin-bottom: 4;
+      }
+
+      Box {
+        orientation: horizontal;
+        margin-start: 12;
+        margin-end: 12;
+        margin-top: 4;
+        margin-bottom: 4;
+
+        Label {
+          label: "Channels";
+          hexpand: true;
+          xalign: 0;
+
+          styles [
+            "heading",
+          ]
+        }
+
+        Label node_count_label {
+          label: "0 nodes";
+          xalign: 1;
+
+          styles [
+            "dim-label",
+            "caption",
+          ]
+        }
+      }
+
+      ListBox channel_list_box {
+        selection-mode: single;
+
+        styles [
+          "navigation-sidebar",
+        ]
+      }
+    };
+  };
+}
