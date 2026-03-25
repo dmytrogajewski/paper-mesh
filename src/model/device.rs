@@ -816,91 +816,99 @@ async fn handle_payload(
     Ok(())
 }
 
-/// Background task that runs the Meshtastic connection
-async fn run_device(
-    method: ConnectionMethod,
-    event_tx: async_channel::Sender<DeviceEvent>,
-    mut cmd_rx: tokio::sync::mpsc::UnboundedReceiver<DeviceCommand>,
-) -> anyhow::Result<()> {
+/// Attempt a single connect + configure + config drain cycle.
+/// Returns (decoded_listener, configured_api, my_node_num, got_config_complete).
+async fn try_connect_and_configure(
+    method: &ConnectionMethod,
+    event_tx: &async_channel::Sender<DeviceEvent>,
+    attempt_label: &str,
+) -> anyhow::Result<(
+    meshtastic::packet::PacketReceiver,
+    meshtastic::api::ConnectedStreamApi<meshtastic::api::state::Configured>,
+    NodeId,
+    bool,
+)> {
     use meshtastic::api::StreamApi;
     use meshtastic::utils;
 
     let stream_api = StreamApi::new();
 
     event_tx
-        .send(DeviceEvent::Status("Opening serial port...".into()))
+        .send(DeviceEvent::Status(format!(
+            "Opening connection...{}",
+            attempt_label
+        )))
         .await?;
 
     let (mut decoded_listener, stream_api) = match method {
         ConnectionMethod::Serial(port) => {
             event_tx
                 .send(DeviceEvent::Status(format!(
-                    "Connecting to {}...",
-                    port
+                    "Connecting to {}...{}",
+                    port, attempt_label
                 )))
                 .await?;
-            let serial_stream = utils::stream::build_serial_stream(port, None, None, None)?;
+            let serial_stream =
+                utils::stream::build_serial_stream(port.clone(), None, None, None)?;
             stream_api.connect(serial_stream).await
         }
         ConnectionMethod::Tcp(address) => {
             event_tx
                 .send(DeviceEvent::Status(format!(
-                    "Connecting to {}...",
-                    address
+                    "Connecting to {}...{}",
+                    address, attempt_label
                 )))
                 .await?;
-            let tcp_stream = utils::stream::build_tcp_stream(address).await?;
+            let tcp_stream = utils::stream::build_tcp_stream(address.clone()).await?;
             stream_api.connect(tcp_stream).await
         }
     };
 
     event_tx
-        .send(DeviceEvent::Status(
-            "Connected. Requesting configuration...".into(),
-        ))
+        .send(DeviceEvent::Status(format!(
+            "Connected. Requesting configuration...{}",
+            attempt_label
+        )))
         .await?;
 
     let config_id = utils::generate_rand_id();
-    let mut stream_api = match tokio::time::timeout(
-        std::time::Duration::from_secs(30),
+    let stream_api = match tokio::time::timeout(
+        std::time::Duration::from_secs(15),
         stream_api.configure(config_id),
     )
     .await
     {
         Ok(Ok(api)) => api,
         Ok(Err(e)) => {
-            return Err(anyhow::anyhow!("Configuration failed: {e}"));
+            return Err(anyhow::anyhow!("Configure failed: {e}"));
         }
         Err(_) => {
-            return Err(anyhow::anyhow!(
-                "Configuration timed out after 30s. Try disconnecting and reconnecting the device."
-            ));
+            return Err(anyhow::anyhow!("Configure timed out"));
         }
     };
 
-    // configure() just sends WantConfigId — the actual config data
-    // (MyInfo, NodeInfo, Channel, ConfigCompleteId) arrives via decoded_listener.
-    // Drain what we can immediately to get MyInfo early.
-
+    // Drain initial config burst (MyInfo, NodeInfo, Channel, ConfigCompleteId)
     let mut my_node_num: NodeId = 0;
     let mut got_config_complete = false;
 
-    // First, drain initial config burst with a short timeout per packet.
-    // The device sends config data rapidly after WantConfigId.
     loop {
         match tokio::time::timeout(
             std::time::Duration::from_secs(5),
             decoded_listener.recv(),
-        ).await {
+        )
+        .await
+        {
             Ok(Some(from_radio)) => {
                 if let Some(payload) = from_radio.payload_variant {
                     use meshtastic::protobufs::from_radio::PayloadVariant;
                     match &payload {
                         PayloadVariant::MyInfo(info) => {
                             my_node_num = info.my_node_num;
-                            event_tx.send(DeviceEvent::Connected {
-                                my_node_num: info.my_node_num,
-                            }).await?;
+                            event_tx
+                                .send(DeviceEvent::Connected {
+                                    my_node_num: info.my_node_num,
+                                })
+                                .await?;
                         }
                         PayloadVariant::ConfigCompleteId(_) => {
                             got_config_complete = true;
@@ -908,8 +916,7 @@ async fn run_device(
                         }
                         _ => {}
                     }
-                    // Process config data through the normal handler
-                    handle_payload(&event_tx, &payload, my_node_num).await?;
+                    handle_payload(event_tx, &payload, my_node_num).await?;
 
                     if got_config_complete {
                         break;
@@ -917,19 +924,16 @@ async fn run_device(
                 }
             }
             Ok(None) => {
-                event_tx.send(DeviceEvent::Disconnected).await?;
-                return Ok(());
+                return Err(anyhow::anyhow!("Device disconnected during config"));
             }
             Err(_) => {
-                // Timeout — no more config packets
-                log::warn!("Config drain timed out, proceeding anyway");
+                // Timeout waiting for config packets
                 if my_node_num == 0 {
-                    event_tx.send(DeviceEvent::Error(
-                        "Device did not send node info. Try reconnecting.".into()
-                    )).await?;
-                    return Ok(());
+                    return Err(anyhow::anyhow!(
+                        "Device did not send node info (wake up may be needed)"
+                    ));
                 }
-                // Send config complete even if we didn't get the explicit packet
+                // Got MyInfo but no ConfigComplete — proceed anyway
                 if !got_config_complete {
                     event_tx.send(DeviceEvent::ConfigComplete).await?;
                 }
@@ -938,7 +942,76 @@ async fn run_device(
         }
     }
 
+    Ok((decoded_listener, stream_api, my_node_num, got_config_complete))
+}
+
+/// Background task that runs the Meshtastic connection with retry logic.
+///
+/// Meshtastic devices (especially over serial) often need a "wake up" period —
+/// the first connection attempt may fail or time out because the device is still
+/// initializing. We retry up to MAX_RETRIES times with increasing delays.
+async fn run_device(
+    method: ConnectionMethod,
+    event_tx: async_channel::Sender<DeviceEvent>,
+    mut cmd_rx: tokio::sync::mpsc::UnboundedReceiver<DeviceCommand>,
+) -> anyhow::Result<()> {
+    const MAX_RETRIES: u32 = 5;
+    const INITIAL_DELAY_SECS: u64 = 2;
+
+    let mut decoded_listener;
+    let mut stream_api_configured;
+    let mut my_node_num: NodeId = 0;
+
+    // Retry loop for connect + configure + config drain
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        let attempt_label = if attempt > 1 {
+            format!(" (attempt {}/{})", attempt, MAX_RETRIES)
+        } else {
+            String::new()
+        };
+
+        match try_connect_and_configure(&method, &event_tx, &attempt_label).await {
+            Ok((listener, api, node_num, _got_complete)) => {
+                decoded_listener = listener;
+                stream_api_configured = api;
+                my_node_num = node_num;
+                break;
+            }
+            Err(e) => {
+                if attempt >= MAX_RETRIES {
+                    return Err(anyhow::anyhow!(
+                        "Failed after {} attempts: {}",
+                        MAX_RETRIES,
+                        e
+                    ));
+                }
+                let delay = INITIAL_DELAY_SECS * attempt as u64;
+                event_tx
+                    .send(DeviceEvent::Status(format!(
+                        "Connection failed: {}. Retrying in {}s... ({}/{})",
+                        e, delay, attempt, MAX_RETRIES
+                    )))
+                    .await?;
+                log::warn!("Attempt {attempt}/{MAX_RETRIES} failed: {e}. Retrying in {delay}s...");
+
+                // Check if user wants to disconnect during the wait
+                tokio::select! {
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(delay)) => {}
+                    cmd = cmd_rx.recv() => {
+                        if let Some(DeviceCommand::Disconnect) = cmd {
+                            event_tx.send(DeviceEvent::Disconnected).await?;
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Main event loop — handle ongoing mesh packets and commands
+    let mut stream_api = stream_api_configured;
     loop {
         tokio::select! {
             decoded = decoded_listener.recv() => {
