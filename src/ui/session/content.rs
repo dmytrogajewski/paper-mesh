@@ -33,6 +33,8 @@ mod imp {
         pub(super) channel: RefCell<Option<model::Channel>>,
         /// DM target node. 0xFFFFFFFF = broadcast
         pub(super) dm_target: Cell<u32>,
+        /// Signal handler IDs to disconnect on channel switch
+        pub(super) signal_handlers: RefCell<Vec<glib::SignalHandlerId>>,
     }
 
     #[glib::object_subclass]
@@ -64,6 +66,22 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
             self.dm_target.set(0xFFFFFFFF);
+
+            // Set up the factory once — it's stateless and reusable
+            let factory = gtk::SignalListItemFactory::new();
+            factory.connect_setup(|_, list_item| {
+                let list_item = list_item.downcast_ref::<gtk::ListItem>().unwrap();
+                list_item.set_child(Some(&ui::MessageRow::new()));
+            });
+            factory.connect_bind(|_, list_item| {
+                let list_item = list_item.downcast_ref::<gtk::ListItem>().unwrap();
+                if let Some(message) = list_item.item().and_downcast::<model::MeshMessage>() {
+                    if let Some(row) = list_item.child().and_downcast::<ui::MessageRow>() {
+                        row.set_message(&message);
+                    }
+                }
+            });
+            self.message_list_view.set_factory(Some(&factory));
         }
     }
 
@@ -80,30 +98,27 @@ glib::wrapper! {
 impl Content {
     pub(crate) fn set_channel(&self, device: &model::Device, channel: &model::Channel) {
         let imp = self.imp();
+
+        // Disconnect old signal handlers
+        if let Some(old_channel) = imp.channel.borrow().as_ref() {
+            let old_messages = old_channel.messages();
+            for handler_id in imp.signal_handlers.borrow_mut().drain(..) {
+                old_messages.disconnect(handler_id);
+            }
+        }
+
         imp.device.replace(Some(device.clone()));
         imp.channel.replace(Some(channel.clone()));
 
         let messages = channel.messages();
 
-        let factory = gtk::SignalListItemFactory::new();
-        factory.connect_setup(|_, list_item| {
-            let list_item = list_item.downcast_ref::<gtk::ListItem>().unwrap();
-            list_item.set_child(Some(&ui::MessageRow::new()));
-        });
-        factory.connect_bind(|_, list_item| {
-            let list_item = list_item.downcast_ref::<gtk::ListItem>().unwrap();
-            let message = list_item.item().and_downcast::<model::MeshMessage>().unwrap();
-            let row = list_item.child().and_downcast::<ui::MessageRow>().unwrap();
-            row.set_message(&message);
-        });
-
+        // Set new model
         let selection = gtk::NoSelection::new(Some(messages.clone()));
         imp.message_list_view.set_model(Some(&selection));
-        imp.message_list_view.set_factory(Some(&factory));
 
         // Auto-scroll to bottom when new messages arrive
         let list_view = imp.message_list_view.clone();
-        messages.connect_items_changed(
+        let h1 = messages.connect_items_changed(
             clone!(@weak list_view => move |model, _, _, _| {
                 let n = model.n_items();
                 if n > 0 {
@@ -113,20 +128,28 @@ impl Content {
         );
 
         // Show message list or empty state
-        if messages.n_items() > 0 {
-            imp.content_stack.set_visible_child_name("messages");
-        } else {
-            imp.content_stack.set_visible_child_name("empty");
-        }
+        let has_messages = messages.n_items() > 0;
+        imp.content_stack
+            .set_visible_child_name(if has_messages { "messages" } else { "empty" });
 
         let content_stack = imp.content_stack.clone();
-        messages.connect_items_changed(
+        let h2 = messages.connect_items_changed(
             clone!(@weak content_stack as stack => move |model, _, _, _| {
                 if model.n_items() > 0 {
                     stack.set_visible_child_name("messages");
                 }
             }),
         );
+
+        // Store handler IDs for cleanup
+        imp.signal_handlers.borrow_mut().extend([h1, h2]);
+
+        // Scroll to bottom if there are existing messages
+        if has_messages {
+            let n = messages.n_items();
+            imp.message_list_view
+                .scroll_to(n - 1, gtk::ListScrollFlags::NONE, None);
+        }
 
         // Reset DM target when switching channels
         self.clear_dm_target();
