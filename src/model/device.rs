@@ -534,8 +534,8 @@ impl Device {
                     let channel = Channel::new(index);
                     channel.set_name(&name);
                     channel.set_role(role);
-                    // Load persisted messages for this channel
-                    let stored = message_store::load_messages(index);
+                    // Load persisted messages for this channel (scoped to this device)
+                    let stored = message_store::load_messages(self.my_node_num(), index);
                     for sm in &stored {
                         channel.messages().append(sm.to_mesh_message());
                     }
@@ -597,7 +597,7 @@ impl Device {
                 }
 
                 // Persist to disk
-                message_store::append_message(channel_index, &message);
+                message_store::append_message(self.my_node_num(), channel_index, &message);
 
                 // Unread tracking + desktop notification for incoming messages
                 if direction == MessageDirection::Incoming {
@@ -617,7 +617,7 @@ impl Device {
                     let channel = Channel::new(channel_index);
                     channel.set_role(1);
                     // Load any prior persisted messages first
-                    let stored = message_store::load_messages(channel_index);
+                    let stored = message_store::load_messages(self.my_node_num(), channel_index);
                     for sm in &stored {
                         if sm.packet_id != packet_id {
                             channel.messages().append(sm.to_mesh_message());
@@ -663,7 +663,7 @@ impl Device {
                                 if msg.packet_id() == request_id {
                                     msg.set_delivery_status(status);
                                     message_store::update_delivery_status(
-                                        ch.index(), request_id, status_str,
+                                        self.my_node_num(), ch.index(), request_id, status_str,
                                     );
                                     return;
                                 }

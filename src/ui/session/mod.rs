@@ -129,6 +129,13 @@ impl Session {
         );
     }
 
+    pub(crate) fn reset(&self) {
+        let imp = self.imp();
+        imp.content.reset();
+        imp.header_title.set_title("Select a channel");
+        imp.device.replace(None);
+    }
+
     fn show_add_channel_dialog(&self) {
         let device = self.imp().device.borrow();
         let Some(device) = device.as_ref() else {

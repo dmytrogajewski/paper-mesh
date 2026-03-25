@@ -60,6 +60,7 @@ mod imp {
                             obj.imp().stack.set_visible_child_name("session");
                         }
                         model::DeviceState::Disconnected => {
+                            obj.imp().session.reset();
                             obj.imp().stack.set_visible_child_name("connect");
                         }
                         _ => {}

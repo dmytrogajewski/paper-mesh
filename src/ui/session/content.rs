@@ -96,6 +96,22 @@ glib::wrapper! {
 }
 
 impl Content {
+    /// Reset to empty state — clears model, channel, signal handlers
+    pub(crate) fn reset(&self) {
+        let imp = self.imp();
+        if let Some(old_channel) = imp.channel.borrow().as_ref() {
+            let old_messages = old_channel.messages();
+            for handler_id in imp.signal_handlers.borrow_mut().drain(..) {
+                old_messages.disconnect(handler_id);
+            }
+        }
+        imp.device.replace(None);
+        imp.channel.replace(None);
+        imp.message_list_view.set_model(gtk::SelectionModel::NONE);
+        imp.content_stack.set_visible_child_name("empty");
+        self.clear_dm_target();
+    }
+
     pub(crate) fn set_channel(&self, device: &model::Device, channel: &model::Channel) {
         let imp = self.imp();
 

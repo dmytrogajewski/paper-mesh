@@ -83,31 +83,27 @@ impl StoredMessage {
     }
 }
 
-fn messages_dir() -> PathBuf {
-    let dir = crate::utils::data_dir().join("messages");
-    ensure_dir(&dir);
-    dir
-}
-
-fn ensure_dir(dir: &PathBuf) {
+fn device_messages_dir(device_id: u32) -> PathBuf {
+    let dir = crate::utils::data_dir().join(format!("messages/{:08x}", device_id));
     if !dir.exists() {
-        if let Err(e) = fs::create_dir_all(dir) {
+        if let Err(e) = fs::create_dir_all(&dir) {
             log::error!("Failed to create messages dir: {e}");
         }
     }
+    dir
 }
 
-fn channel_file(channel_index: u32) -> PathBuf {
-    messages_dir().join(format!("channel_{}.json", channel_index))
+fn channel_file(device_id: u32, channel_index: u32) -> PathBuf {
+    device_messages_dir(device_id).join(format!("channel_{}.json", channel_index))
 }
 
 fn channel_file_in(dir: &PathBuf, channel_index: u32) -> PathBuf {
     dir.join(format!("channel_{}.json", channel_index))
 }
 
-/// Load stored messages for a channel
-pub(crate) fn load_messages(channel_index: u32) -> Vec<StoredMessage> {
-    load_messages_from(&channel_file(channel_index))
+/// Load stored messages for a channel on a specific device
+pub(crate) fn load_messages(device_id: u32, channel_index: u32) -> Vec<StoredMessage> {
+    load_messages_from(&channel_file(device_id, channel_index))
 }
 
 /// Load stored messages from a specific path
@@ -130,9 +126,9 @@ pub(crate) fn load_messages_from(path: &PathBuf) -> Vec<StoredMessage> {
     }
 }
 
-/// Append a single message to the channel's store
-pub(crate) fn append_message(channel_index: u32, msg: &MeshMessage) {
-    append_message_to(&channel_file(channel_index), msg);
+/// Append a single message to the channel's store for a specific device
+pub(crate) fn append_message(device_id: u32, channel_index: u32, msg: &MeshMessage) {
+    append_message_to(&channel_file(device_id, channel_index), msg);
 }
 
 /// Append a single message to a specific file path
@@ -161,8 +157,8 @@ pub(crate) fn append_message_to(path: &PathBuf, msg: &MeshMessage) {
 }
 
 /// Update the delivery status of a persisted message by packet_id
-pub(crate) fn update_delivery_status(channel_index: u32, packet_id: u32, status: &str) {
-    let path = channel_file(channel_index);
+pub(crate) fn update_delivery_status(device_id: u32, channel_index: u32, packet_id: u32, status: &str) {
+    let path = channel_file(device_id, channel_index);
     let mut messages = load_messages_from(&path);
     let mut changed = false;
     for m in &mut messages {
