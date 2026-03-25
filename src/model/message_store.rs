@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use super::{MeshMessage, MessageDirection};
+use super::{DeliveryStatus, MeshMessage, MessageDirection};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub(crate) struct StoredMessage {
@@ -24,6 +24,9 @@ pub(crate) struct StoredMessage {
     pub hop_start: u32,
     pub hop_limit: u32,
     pub sender_name: String,
+    /// "none", "sending", "delivered", "failed"
+    #[serde(default)]
+    pub delivery_status: String,
 }
 
 impl StoredMessage {
@@ -44,6 +47,12 @@ impl StoredMessage {
             hop_start: 0,
             hop_limit: 0,
             sender_name: msg.sender_name(),
+            delivery_status: match msg.delivery_status() {
+                DeliveryStatus::None => "none".to_string(),
+                DeliveryStatus::Sending => "sending".to_string(),
+                DeliveryStatus::Delivered => "delivered".to_string(),
+                DeliveryStatus::Failed => "failed".to_string(),
+            },
         }
     }
 
@@ -51,6 +60,12 @@ impl StoredMessage {
         let direction = match self.direction.as_str() {
             "outgoing" => MessageDirection::Outgoing,
             _ => MessageDirection::Incoming,
+        };
+        let delivery = match self.delivery_status.as_str() {
+            "sending" => DeliveryStatus::Failed, // stale "sending" from previous session = failed
+            "delivered" => DeliveryStatus::Delivered,
+            "failed" => DeliveryStatus::Failed,
+            _ => DeliveryStatus::None,
         };
         let msg = MeshMessage::new(
             self.packet_id,
@@ -63,6 +78,7 @@ impl StoredMessage {
         );
         msg.set_radio_info(self.snr, self.rssi, self.hop_start, self.hop_limit);
         msg.set_sender_name(&self.sender_name);
+        msg.set_delivery_status(delivery);
         msg
     }
 }
@@ -144,6 +160,25 @@ pub(crate) fn append_message_to(path: &PathBuf, msg: &MeshMessage) {
     }
 }
 
+/// Update the delivery status of a persisted message by packet_id
+pub(crate) fn update_delivery_status(channel_index: u32, packet_id: u32, status: &str) {
+    let path = channel_file(channel_index);
+    let mut messages = load_messages_from(&path);
+    let mut changed = false;
+    for m in &mut messages {
+        if m.packet_id == packet_id && packet_id != 0 {
+            m.delivery_status = status.to_string();
+            changed = true;
+            break;
+        }
+    }
+    if changed {
+        if let Err(e) = write_messages_to(&path, &messages) {
+            log::error!("Failed to update delivery status: {e}");
+        }
+    }
+}
+
 fn write_messages_to(path: &PathBuf, messages: &[StoredMessage]) -> anyhow::Result<()> {
     let data = serde_json::to_string(messages)?;
     fs::write(path, data)?;
@@ -217,6 +252,7 @@ mod tests {
             hop_start: 0,
             hop_limit: 0,
             sender_name: "".into(),
+            delivery_status: "none".into(),
         };
         let msg = stored.to_mesh_message();
         assert_eq!(msg.direction(), MessageDirection::Incoming);
@@ -237,6 +273,7 @@ mod tests {
             hop_start: 3,
             hop_limit: 1,
             sender_name: "Alice".into(),
+            delivery_status: "none".into(),
         };
         let json = serde_json::to_string(&stored).unwrap();
         let deserialized: StoredMessage = serde_json::from_str(&json).unwrap();

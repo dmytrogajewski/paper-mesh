@@ -581,18 +581,13 @@ impl Device {
                 );
                 message.set_radio_info(snr, rssi, hop_start, hop_limit);
 
-                // Set delivery status for outgoing messages
+                // Set delivery status for outgoing messages.
+                // No hardcoded timeout — the Meshtastic firmware handles retransmission
+                // and will send a RoutingApp NAK (Timeout/MaxRetransmit) if delivery
+                // ultimately fails. This can take several minutes depending on hop count
+                // and mesh conditions.
                 if is_outgoing {
                     message.set_delivery_status(super::DeliveryStatus::Sending);
-                    // Timeout: mark as failed after 60s if no ACK
-                    let msg_weak = message.downgrade();
-                    glib::timeout_add_seconds_local_once(60, move || {
-                        if let Some(msg) = msg_weak.upgrade() {
-                            if msg.delivery_status() == super::DeliveryStatus::Sending {
-                                msg.set_delivery_status(super::DeliveryStatus::Failed);
-                            }
-                        }
-                    });
                 }
 
                 if let Some(node) = self.nodes().find_by_num(from) {
@@ -653,13 +648,13 @@ impl Device {
                 );
             }
             DeviceEvent::DeliveryAck { request_id, error } => {
-                // Find the message with this packet_id and update its delivery status
                 let status = if error == 0 {
                     super::DeliveryStatus::Delivered
                 } else {
                     super::DeliveryStatus::Failed
                 };
-                // Search all channels for the message
+                let status_str = if error == 0 { "delivered" } else { "failed" };
+                // Search all channels for the message and update both in-memory and on disk
                 for ch in self.channels() {
                     let msgs = ch.messages();
                     for i in 0..msgs.n_items() {
@@ -667,6 +662,9 @@ impl Device {
                             if let Some(msg) = obj.downcast_ref::<MeshMessage>() {
                                 if msg.packet_id() == request_id {
                                     msg.set_delivery_status(status);
+                                    message_store::update_delivery_status(
+                                        ch.index(), request_id, status_str,
+                                    );
                                     return;
                                 }
                             }
