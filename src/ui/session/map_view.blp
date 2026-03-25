@@ -1,0 +1,59 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $PaplMapView: Adw.Bin {
+  child: Overlay overlay {
+    child: Box map_container {
+      orientation: vertical;
+      hexpand: true;
+      vexpand: true;
+    };
+
+    [overlay]
+    Box {
+      orientation: vertical;
+      valign: start;
+      halign: end;
+      margin-top: 8;
+      margin-end: 8;
+      spacing: 4;
+
+      styles [
+        "linked",
+      ]
+
+      Button zoom_in_button {
+        icon-name: "zoom-in-symbolic";
+        action-name: "map.zoom-in";
+
+        styles [
+          "circular",
+          "osd",
+        ]
+      }
+
+      Button zoom_out_button {
+        icon-name: "zoom-out-symbolic";
+        action-name: "map.zoom-out";
+
+        styles [
+          "circular",
+          "osd",
+        ]
+      }
+    }
+
+    [overlay]
+    Label node_info_label {
+      halign: start;
+      valign: end;
+      margin-start: 8;
+      margin-bottom: 8;
+
+      styles [
+        "osd",
+        "caption",
+      ]
+    }
+  };
+}

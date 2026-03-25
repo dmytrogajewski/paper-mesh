@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use adw::subclass::prelude::*;
 use glib::clone;
 use gtk::glib;
@@ -23,8 +25,14 @@ mod imp {
         pub(super) empty_label: TemplateChild<gtk::Label>,
         #[template_child]
         pub(super) content_stack: TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub(super) dm_bar: TemplateChild<gtk::Box>,
+        #[template_child]
+        pub(super) dm_target_label: TemplateChild<gtk::Label>,
         pub(super) device: RefCell<Option<model::Device>>,
         pub(super) channel: RefCell<Option<model::Channel>>,
+        /// DM target node. 0xFFFFFFFF = broadcast
+        pub(super) dm_target: Cell<u32>,
     }
 
     #[glib::object_subclass]
@@ -41,6 +49,10 @@ mod imp {
             klass.install_action("content.send-message", None, move |obj, _, _| {
                 obj.send_message();
             });
+
+            klass.install_action("content.clear-dm", None, move |obj, _, _| {
+                obj.clear_dm_target();
+            });
         }
 
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
@@ -48,7 +60,13 @@ mod imp {
         }
     }
 
-    impl ObjectImpl for Content {}
+    impl ObjectImpl for Content {
+        fn constructed(&self) {
+            self.parent_constructed();
+            self.dm_target.set(0xFFFFFFFF);
+        }
+    }
+
     impl WidgetImpl for Content {}
     impl BinImpl for Content {}
 }
@@ -109,6 +127,29 @@ impl Content {
                 }
             }),
         );
+
+        // Reset DM target when switching channels
+        self.clear_dm_target();
+    }
+
+    /// Set a DM target node
+    pub(crate) fn set_dm_target(&self, node_num: u32, device: &model::Device) {
+        let imp = self.imp();
+        imp.dm_target.set(node_num);
+        imp.dm_bar.set_visible(true);
+
+        let name = if let Some(node) = device.nodes().find_by_num(node_num) {
+            node.display_name()
+        } else {
+            format!("!{:08x}", node_num)
+        };
+        imp.dm_target_label.set_label(&name);
+    }
+
+    fn clear_dm_target(&self) {
+        let imp = self.imp();
+        imp.dm_target.set(0xFFFFFFFF);
+        imp.dm_bar.set_visible(false);
     }
 
     fn send_message(&self) {
@@ -120,9 +161,10 @@ impl Content {
 
         let device = imp.device.borrow();
         let channel = imp.channel.borrow();
+        let destination = imp.dm_target.get();
 
         if let (Some(device), Some(channel)) = (device.as_ref(), channel.as_ref()) {
-            device.send_text(&text, channel.index(), 0xFFFFFFFF); // broadcast
+            device.send_text(&text, channel.index(), destination);
             imp.message_entry.clear();
         }
     }

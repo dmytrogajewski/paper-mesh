@@ -1,0 +1,87 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $PaplNodeRow: Box {
+  orientation: horizontal;
+  spacing: 8;
+  margin-start: 8;
+  margin-end: 8;
+  margin-top: 4;
+  margin-bottom: 4;
+
+  Box {
+    orientation: vertical;
+    valign: center;
+    spacing: 1;
+
+    Label short_name_label {
+      width-chars: 4;
+
+      styles [
+        "heading",
+        "caption",
+      ]
+    }
+
+    Image online_icon {
+      icon-name: "media-record-symbolic";
+      pixel-size: 8;
+      halign: center;
+    }
+  }
+
+  Box {
+    orientation: vertical;
+    hexpand: true;
+    spacing: 1;
+
+    Box {
+      orientation: horizontal;
+      spacing: 6;
+
+      Label long_name_label {
+        xalign: 0;
+        hexpand: true;
+        ellipsize: end;
+
+        styles [
+          "heading",
+        ]
+      }
+
+      Label last_heard_label {
+        xalign: 1;
+
+        styles [
+          "dim-label",
+          "caption",
+        ]
+      }
+    }
+
+    Box {
+      orientation: horizontal;
+      spacing: 8;
+
+      Label hw_label {
+        xalign: 0;
+        ellipsize: end;
+
+        styles [
+          "dim-label",
+          "caption",
+        ]
+      }
+
+      Label battery_label {
+        xalign: 1;
+        hexpand: true;
+
+        styles [
+          "dim-label",
+          "caption",
+        ]
+      }
+    }
+  }
+}

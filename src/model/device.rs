@@ -12,6 +12,8 @@ use super::ConnectionMethod;
 use super::MeshMessage;
 use super::MessageDirection;
 use super::NodeList;
+use super::Waypoint;
+use super::WaypointList;
 use super::message_store;
 use crate::types::NodeId;
 use crate::utils;
@@ -61,6 +63,16 @@ pub(crate) enum DeviceEvent {
         hop_start: u32,
         hop_limit: u32,
     },
+    WaypointReceived {
+        id: u32,
+        name: String,
+        description: String,
+        latitude: f64,
+        longitude: f64,
+        expire: u32,
+        locked_to: u32,
+        from_node: NodeId,
+    },
 }
 
 /// Commands sent from the GTK main loop to the background tokio thread
@@ -78,6 +90,13 @@ pub(crate) enum DeviceCommand {
     },
     DeleteChannel {
         index: u32,
+    },
+    SendWaypoint {
+        name: String,
+        description: String,
+        latitude: f64,
+        longitude: f64,
+        channel_index: u32,
     },
     Disconnect,
 }
@@ -102,6 +121,7 @@ mod imp {
         pub(super) state: Cell<DeviceState>,
         pub(super) my_node_num: Cell<NodeId>,
         pub(super) nodes: OnceCell<NodeList>,
+        pub(super) waypoints: OnceCell<WaypointList>,
         pub(super) channels: RefCell<Vec<Channel>>,
         pub(super) error_message: RefCell<String>,
         pub(super) status_message: RefCell<String>,
@@ -121,6 +141,7 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
             self.nodes.set(NodeList::default()).unwrap();
+            self.waypoints.set(WaypointList::default()).unwrap();
         }
 
         fn signals() -> &'static [glib::subclass::Signal] {
@@ -194,6 +215,10 @@ impl Device {
 
     pub(crate) fn nodes(&self) -> &NodeList {
         self.imp().nodes.get().unwrap()
+    }
+
+    pub(crate) fn waypoints(&self) -> &WaypointList {
+        self.imp().waypoints.get().unwrap()
     }
 
     pub(crate) fn channels(&self) -> Vec<Channel> {
@@ -290,6 +315,25 @@ impl Device {
                 text: text.to_string(),
                 channel_index,
                 destination,
+            });
+        }
+    }
+
+    pub(crate) fn send_waypoint(
+        &self,
+        name: &str,
+        description: &str,
+        lat: f64,
+        lon: f64,
+        channel_index: u32,
+    ) {
+        if let Some(sender) = self.imp().command_sender.borrow().as_ref() {
+            let _ = sender.send(DeviceCommand::SendWaypoint {
+                name: name.to_string(),
+                description: description.to_string(),
+                latitude: lat,
+                longitude: lon,
+                channel_index,
             });
         }
     }
@@ -480,6 +524,25 @@ impl Device {
                     self.imp().channels.borrow_mut().push(channel);
                     self.emit_by_name::<()>("channels-changed", &[]);
                 }
+            }
+            DeviceEvent::WaypointReceived {
+                id,
+                name,
+                description,
+                latitude,
+                longitude,
+                expire,
+                locked_to,
+                from_node,
+            } => {
+                let waypoint = Waypoint::new(
+                    id, &name, &description, latitude, longitude, expire, locked_to, from_node,
+                );
+                self.waypoints().add_or_update(waypoint);
+                log::info!(
+                    "Waypoint received: {} ({}, {}) from !{:08x}",
+                    name, latitude, longitude, from_node
+                );
             }
         }
     }
@@ -689,6 +752,22 @@ async fn run_device(
                                     }).await?;
                                 }
                             }
+                            if data.portnum() == meshtastic::protobufs::PortNum::WaypointApp {
+                                if let Ok(wp) = meshtastic::protobufs::Waypoint::decode(
+                                    data.payload.as_slice(),
+                                ) {
+                                    event_tx.send(DeviceEvent::WaypointReceived {
+                                        id: wp.id,
+                                        name: wp.name,
+                                        description: wp.description,
+                                        latitude: wp.latitude_i.unwrap_or(0) as f64 * 1e-7,
+                                        longitude: wp.longitude_i.unwrap_or(0) as f64 * 1e-7,
+                                        expire: wp.expire,
+                                        locked_to: wp.locked_to,
+                                        from_node: from,
+                                    }).await?;
+                                }
+                            }
                         }
                     }
                     _ => {}
@@ -803,6 +882,38 @@ async fn run_device(
                             event_tx.send(DeviceEvent::Status(
                                 "Channel deleted. Device restarting...".into()
                             )).await?;
+                        }
+                    }
+                    DeviceCommand::SendWaypoint { name, description, latitude, longitude, channel_index } => {
+                        let mut router = NoOpRouter;
+                        let waypoint = meshtastic::protobufs::Waypoint {
+                            id: meshtastic::utils::generate_rand_id(),
+                            latitude_i: Some((latitude * 1e7) as i32),
+                            longitude_i: Some((longitude * 1e7) as i32),
+                            expire: 0,
+                            locked_to: 0,
+                            name: name.clone(),
+                            description: description.clone(),
+                            icon: 0,
+                        };
+                        let channel = meshtastic::types::MeshChannel::new(channel_index)?;
+                        if let Err(e) = stream_api
+                            .send_waypoint(&mut router, waypoint, meshtastic::packet::PacketDestination::Broadcast, true, channel)
+                            .await
+                        {
+                            log::error!("Failed to send waypoint: {e}");
+                            event_tx.send(DeviceEvent::Error(format!("Send waypoint failed: {e}"))).await?;
+                        } else {
+                            event_tx.send(DeviceEvent::WaypointReceived {
+                                id: meshtastic::utils::generate_rand_id(),
+                                name,
+                                description,
+                                latitude,
+                                longitude,
+                                expire: 0,
+                                locked_to: 0,
+                                from_node: my_node_num,
+                            }).await?;
                         }
                     }
                     DeviceCommand::Disconnect => {

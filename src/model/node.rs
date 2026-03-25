@@ -139,6 +139,18 @@ impl Node {
         self.notify("last-heard");
     }
 
+    pub(crate) fn latitude(&self) -> f64 {
+        self.imp().latitude.get()
+    }
+
+    pub(crate) fn longitude(&self) -> f64 {
+        self.imp().longitude.get()
+    }
+
+    pub(crate) fn altitude(&self) -> i32 {
+        self.imp().altitude.get()
+    }
+
     pub(crate) fn set_position(&self, lat: f64, lon: f64, alt: i32) {
         self.imp().latitude.set(lat);
         self.imp().longitude.set(lon);

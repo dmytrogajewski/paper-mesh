@@ -39,6 +39,45 @@ template $PaplContent: Adw.Bin {
 
     Separator {}
 
+    // DM target bar (hidden by default)
+    Box dm_bar {
+      orientation: horizontal;
+      spacing: 8;
+      margin-start: 8;
+      margin-end: 8;
+      margin-top: 4;
+      visible: false;
+
+      Label {
+        label: "To:";
+
+        styles [
+          "dim-label",
+        ]
+      }
+
+      Label dm_target_label {
+        hexpand: true;
+        xalign: 0;
+
+        styles [
+          "heading",
+          "caption",
+        ]
+      }
+
+      Button dm_clear_button {
+        icon-name: "edit-clear-symbolic";
+        tooltip-text: "Switch to broadcast";
+        action-name: "content.clear-dm";
+
+        styles [
+          "flat",
+          "circular",
+        ]
+      }
+    }
+
     $PaplMessageEntry message_entry {
       margin-start: 8;
       margin-end: 8;

@@ -2,115 +2,164 @@ using Gtk 4.0;
 using Adw 1;
 
 template $PaplSidebar: Adw.Bin {
-  child: ScrolledWindow {
-    hscrollbar-policy: never;
+  child: Box {
+    orientation: vertical;
+    spacing: 0;
 
-    child: Box {
+    // Connection info banner
+    Box connection_banner {
       orientation: vertical;
-      spacing: 0;
+      spacing: 2;
+      margin-start: 12;
+      margin-end: 12;
+      margin-top: 8;
+      margin-bottom: 4;
 
-      // Connection info banner
-      Box connection_banner {
-        orientation: vertical;
-        spacing: 2;
-        margin-start: 12;
-        margin-end: 12;
-        margin-top: 8;
-        margin-bottom: 8;
-
-        styles [
-          "card",
-        ]
-
-        Box {
-          orientation: horizontal;
-          spacing: 6;
-          margin-start: 8;
-          margin-end: 8;
-          margin-top: 6;
-
-          Image {
-            icon-name: "network-wireless-symbolic";
-
-            styles [
-              "success",
-            ]
-          }
-
-          Label connection_info_label {
-            xalign: 0;
-            ellipsize: end;
-            hexpand: true;
-
-            styles [
-              "caption",
-            ]
-          }
-        }
-
-        Box {
-          orientation: horizontal;
-          spacing: 6;
-          margin-start: 8;
-          margin-end: 8;
-          margin-bottom: 6;
-
-          Spinner loading_spinner {
-            spinning: false;
-          }
-
-          Label status_label {
-            xalign: 0;
-            ellipsize: end;
-            hexpand: true;
-
-            styles [
-              "caption",
-              "dim-label",
-            ]
-          }
-        }
-      }
-
-      Separator {
-        margin-bottom: 4;
-      }
+      styles [
+        "card",
+      ]
 
       Box {
         orientation: horizontal;
-        margin-start: 12;
-        margin-end: 12;
-        margin-top: 4;
-        margin-bottom: 4;
+        spacing: 6;
+        margin-start: 8;
+        margin-end: 8;
+        margin-top: 6;
 
-        Label {
-          label: "Channels";
-          hexpand: true;
-          xalign: 0;
+        Image {
+          icon-name: "network-wireless-symbolic";
 
           styles [
-            "heading",
+            "success",
           ]
         }
 
-        Label node_count_label {
-          label: "0 nodes";
-          xalign: 1;
+        Label connection_info_label {
+          xalign: 0;
+          ellipsize: end;
+          hexpand: true;
 
           styles [
-            "dim-label",
             "caption",
           ]
         }
       }
 
-      ListBox channel_list_box {
-        selection-mode: single;
+      Box {
+        orientation: horizontal;
+        spacing: 6;
+        margin-start: 8;
+        margin-end: 8;
+        margin-bottom: 6;
 
-        styles [
-          "navigation-sidebar",
-        ]
+        Spinner loading_spinner {
+          spinning: false;
+        }
+
+        Label status_label {
+          xalign: 0;
+          ellipsize: end;
+          hexpand: true;
+
+          styles [
+            "caption",
+            "dim-label",
+          ]
+        }
       }
-    };
+    }
+
+    // Tab switcher
+    Adw.ViewSwitcher {
+      policy: wide;
+      stack: sidebar_stack;
+      margin-start: 8;
+      margin-end: 8;
+      margin-top: 4;
+      margin-bottom: 4;
+    }
+
+    Separator {}
+
+    // Stacked views
+    Adw.ViewStack sidebar_stack {
+      vexpand: true;
+
+      Adw.ViewStackPage {
+        name: "channels";
+        title: "Channels";
+        icon-name: "network-wireless-symbolic";
+
+        child: ScrolledWindow {
+          hscrollbar-policy: never;
+
+          child: Box {
+            orientation: vertical;
+
+            Box {
+              orientation: horizontal;
+              margin-start: 12;
+              margin-end: 12;
+              margin-top: 4;
+              margin-bottom: 4;
+
+              Label {
+                label: "Channels";
+                hexpand: true;
+                xalign: 0;
+
+                styles [
+                  "heading",
+                ]
+              }
+
+              Label node_count_label {
+                label: "0 nodes";
+                xalign: 1;
+
+                styles [
+                  "dim-label",
+                  "caption",
+                ]
+              }
+            }
+
+            ListBox channel_list_box {
+              selection-mode: single;
+
+              styles [
+                "navigation-sidebar",
+              ]
+            }
+          };
+        };
+      }
+
+      Adw.ViewStackPage {
+        name: "nodes";
+        title: "Nodes";
+        icon-name: "system-users-symbolic";
+
+        child: ScrolledWindow {
+          hscrollbar-policy: never;
+
+          child: ListBox node_list_box {
+            selection-mode: single;
+
+            styles [
+              "navigation-sidebar",
+            ]
+          };
+        };
+      }
+
+      Adw.ViewStackPage {
+        name: "map";
+        title: "Map";
+        icon-name: "find-location-symbolic";
+
+        child: $PaplMapView map_view {};
+      }
+    }
   };
 }

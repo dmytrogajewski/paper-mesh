@@ -1,5 +1,7 @@
 mod add_channel_dialog;
 mod content;
+mod map_view;
+mod node_row;
 mod sidebar;
 mod sidebar_row;
 mod message_row;
@@ -15,7 +17,9 @@ use crate::model;
 
 pub(crate) use self::add_channel_dialog::AddChannelDialog;
 pub(crate) use self::content::Content;
+pub(crate) use self::map_view::MapView;
 pub(crate) use self::message_row::MessageRow;
+pub(crate) use self::node_row::NodeRow;
 pub(crate) use self::sidebar::Sidebar;
 pub(crate) use self::sidebar_row::SidebarRow;
 
@@ -84,7 +88,6 @@ impl Session {
         imp.device.replace(Some(device.clone()));
 
         // When a channel is selected in the sidebar, show it in the content area
-        // When a channel is selected in the sidebar, show it in the content area
         imp.sidebar.connect_local(
             "channel-selected",
             false,
@@ -94,6 +97,31 @@ impl Session {
                     if let Some(channel) = device.channel(channel_index) {
                         obj.imp().content.set_channel(device, &channel);
                         obj.imp().header_title.set_title(&channel.name());
+                        obj.imp().split_view.set_show_content(true);
+                    }
+                }
+                None
+            }),
+        );
+
+        // When a node is selected, set up DM to that node on the primary channel
+        imp.sidebar.connect_local(
+            "node-selected",
+            false,
+            clone!(@weak self as obj => @default-return None, move |values| {
+                let node_num: u32 = values[1].get().unwrap();
+                if let Some(device) = obj.imp().device.borrow().as_ref() {
+                    // Use primary channel (index 0) for DMs
+                    if let Some(channel) = device.channel(0) {
+                        obj.imp().content.set_channel(device, &channel);
+                        obj.imp().content.set_dm_target(node_num, device);
+
+                        let name = if let Some(node) = device.nodes().find_by_num(node_num) {
+                            format!("DM: {}", node.display_name())
+                        } else {
+                            format!("DM: !{:08x}", node_num)
+                        };
+                        obj.imp().header_title.set_title(&name);
                         obj.imp().split_view.set_show_content(true);
                     }
                 }

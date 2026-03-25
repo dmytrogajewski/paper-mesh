@@ -9,6 +9,8 @@
     <file compressed="true" preprocess="xml-stripblanks">session/mod.ui</file>
     <file compressed="true" preprocess="xml-stripblanks">session/sidebar.ui</file>
     <file compressed="true" preprocess="xml-stripblanks">session/sidebar_row.ui</file>
+    <file compressed="true" preprocess="xml-stripblanks">session/node_row.ui</file>
+    <file compressed="true" preprocess="xml-stripblanks">session/map_view.ui</file>
     <file compressed="true" preprocess="xml-stripblanks">session/content.ui</file>
     <file compressed="true" preprocess="xml-stripblanks">session/message_row.ui</file>
 

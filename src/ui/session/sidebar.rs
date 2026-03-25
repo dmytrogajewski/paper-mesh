@@ -8,6 +8,9 @@ use gtk::CompositeTemplate;
 use crate::model;
 use crate::ui;
 
+use super::map_view::MapView;
+use super::node_row::NodeRow;
+
 mod imp {
     use std::cell::RefCell;
     use std::sync::OnceLock;
@@ -20,6 +23,8 @@ mod imp {
         #[template_child]
         pub(super) channel_list_box: TemplateChild<gtk::ListBox>,
         #[template_child]
+        pub(super) node_list_box: TemplateChild<gtk::ListBox>,
+        #[template_child]
         pub(super) node_count_label: TemplateChild<gtk::Label>,
         #[template_child]
         pub(super) connection_info_label: TemplateChild<gtk::Label>,
@@ -27,6 +32,8 @@ mod imp {
         pub(super) status_label: TemplateChild<gtk::Label>,
         #[template_child]
         pub(super) loading_spinner: TemplateChild<gtk::Spinner>,
+        #[template_child]
+        pub(super) map_view: TemplateChild<MapView>,
         pub(super) device: RefCell<Option<model::Device>>,
     }
 
@@ -38,6 +45,8 @@ mod imp {
 
         fn class_init(klass: &mut Self::Class) {
             ui::SidebarRow::ensure_type();
+            NodeRow::ensure_type();
+            MapView::ensure_type();
             Self::bind_template(klass);
         }
 
@@ -50,9 +59,14 @@ mod imp {
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
-                vec![Signal::builder("channel-selected")
-                    .param_types([u32::static_type()])
-                    .build()]
+                vec![
+                    Signal::builder("channel-selected")
+                        .param_types([u32::static_type()])
+                        .build(),
+                    Signal::builder("node-selected")
+                        .param_types([u32::static_type()])
+                        .build(),
+                ]
             })
         }
     }
@@ -72,12 +86,15 @@ impl Sidebar {
         let imp = self.imp();
         imp.device.replace(Some(device.clone()));
 
-        // Set initial connection info
         imp.connection_info_label
             .set_label(&device.connection_info());
 
         self.update_channels(device);
+        self.update_nodes(device);
         self.update_node_count(device);
+
+        // Set up map
+        imp.map_view.set_device(device);
 
         // Listen for status changes
         device.connect_notify_local(
@@ -87,7 +104,6 @@ impl Sidebar {
             }),
         );
 
-        // Listen for config-loading changes
         device.connect_notify_local(
             Some("config-loading"),
             clone!(@weak self as obj => move |device, _| {
@@ -95,7 +111,6 @@ impl Sidebar {
             }),
         );
 
-        // Show initial loading state
         imp.loading_spinner.set_spinning(device.config_loading());
         imp.status_label.set_label(&device.status_message());
 
@@ -109,10 +124,11 @@ impl Sidebar {
             }),
         );
 
-        // Update node count when node list changes
+        // Update node list and count when nodes change
         device.nodes().connect_items_changed(
             clone!(@weak self as obj, @weak device => move |_, _, _, _| {
                 obj.update_node_count(&device);
+                obj.update_nodes(&device);
             }),
         );
 
@@ -121,6 +137,18 @@ impl Sidebar {
             clone!(@weak self as obj => move |_, row| {
                 if let Some(sidebar_row) = row.downcast_ref::<ui::SidebarRow>() {
                     obj.emit_by_name::<()>("channel-selected", &[&sidebar_row.channel_index()]);
+                }
+            }),
+        );
+
+        // Handle node selection (for DM)
+        imp.node_list_box.connect_row_activated(
+            clone!(@weak self as obj => move |_, row| {
+                // Get the NodeRow from the ListBoxRow child
+                if let Some(child) = row.child() {
+                    if let Some(node_row) = child.downcast_ref::<NodeRow>() {
+                        obj.emit_by_name::<()>("node-selected", &[&node_row.node_num()]);
+                    }
                 }
             }),
         );
@@ -139,6 +167,28 @@ impl Sidebar {
                 let row = ui::SidebarRow::new(&channel);
                 list_box.append(&row);
             }
+        }
+    }
+
+    fn update_nodes(&self, device: &model::Device) {
+        let imp = self.imp();
+        let list_box = &imp.node_list_box;
+
+        while let Some(child) = list_box.first_child() {
+            list_box.remove(&child);
+        }
+
+        let nodes = device.nodes();
+        for i in 0..nodes.n_items() {
+            let Some(obj) = nodes.item(i) else { continue };
+            let node = obj.downcast_ref::<model::Node>().unwrap();
+
+            let node_row = NodeRow::new();
+            node_row.set_node(node);
+
+            let list_row = gtk::ListBoxRow::new();
+            list_row.set_child(Some(&node_row));
+            list_box.append(&list_row);
         }
     }
 

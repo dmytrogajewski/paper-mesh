@@ -5,6 +5,8 @@ mod message_list;
 pub(crate) mod message_store;
 mod node;
 mod node_list;
+mod waypoint;
+mod waypoint_list;
 
 use gtk::glib;
 
@@ -16,6 +18,8 @@ pub(crate) use self::message::MessageDirection;
 pub(crate) use self::message_list::MessageList;
 pub(crate) use self::node::Node;
 pub(crate) use self::node_list::NodeList;
+pub(crate) use self::waypoint::Waypoint;
+pub(crate) use self::waypoint_list::WaypointList;
 
 /// Connection method for the Meshtastic device
 #[derive(Clone, Debug, glib::Boxed)]
