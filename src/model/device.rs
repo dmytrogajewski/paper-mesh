@@ -278,9 +278,17 @@ impl Device {
 
     /// Start connecting to a Meshtastic device in a background tokio thread
     pub(crate) fn connect(&self, method: ConnectionMethod) {
-        self.set_state(DeviceState::Connecting);
+        // Kill any existing connection first
+        if let Some(sender) = self.imp().command_sender.borrow().as_ref() {
+            let _ = sender.send(DeviceCommand::Disconnect);
+        }
+        self.imp().command_sender.replace(None);
+
+        // Reset state
+        self.imp().channels.borrow_mut().clear();
         self.imp().config_loading.set(true);
         self.notify("config-loading");
+        self.set_state(DeviceState::Connecting);
 
         // Store connection info for display
         let info = match &method {
@@ -945,73 +953,16 @@ async fn try_connect_and_configure(
     Ok((decoded_listener, stream_api, my_node_num, got_config_complete))
 }
 
-/// Background task that runs the Meshtastic connection with retry logic.
-///
-/// Meshtastic devices (especially over serial) often need a "wake up" period —
-/// the first connection attempt may fail or time out because the device is still
-/// initializing. We retry up to MAX_RETRIES times with increasing delays.
+/// Background task that runs the Meshtastic connection.
 async fn run_device(
     method: ConnectionMethod,
     event_tx: async_channel::Sender<DeviceEvent>,
     mut cmd_rx: tokio::sync::mpsc::UnboundedReceiver<DeviceCommand>,
 ) -> anyhow::Result<()> {
-    const MAX_RETRIES: u32 = 5;
-    const INITIAL_DELAY_SECS: u64 = 2;
-
-    let mut decoded_listener;
-    let mut stream_api_configured;
-    let mut my_node_num: NodeId = 0;
-
-    // Retry loop for connect + configure + config drain
-    let mut attempt = 0;
-    loop {
-        attempt += 1;
-        let attempt_label = if attempt > 1 {
-            format!(" (attempt {}/{})", attempt, MAX_RETRIES)
-        } else {
-            String::new()
-        };
-
-        match try_connect_and_configure(&method, &event_tx, &attempt_label).await {
-            Ok((listener, api, node_num, _got_complete)) => {
-                decoded_listener = listener;
-                stream_api_configured = api;
-                my_node_num = node_num;
-                break;
-            }
-            Err(e) => {
-                if attempt >= MAX_RETRIES {
-                    return Err(anyhow::anyhow!(
-                        "Failed after {} attempts: {}",
-                        MAX_RETRIES,
-                        e
-                    ));
-                }
-                let delay = INITIAL_DELAY_SECS * attempt as u64;
-                event_tx
-                    .send(DeviceEvent::Status(format!(
-                        "Connection failed: {}. Retrying in {}s... ({}/{})",
-                        e, delay, attempt, MAX_RETRIES
-                    )))
-                    .await?;
-                log::warn!("Attempt {attempt}/{MAX_RETRIES} failed: {e}. Retrying in {delay}s...");
-
-                // Check if user wants to disconnect during the wait
-                tokio::select! {
-                    _ = tokio::time::sleep(std::time::Duration::from_secs(delay)) => {}
-                    cmd = cmd_rx.recv() => {
-                        if let Some(DeviceCommand::Disconnect) = cmd {
-                            event_tx.send(DeviceEvent::Disconnected).await?;
-                            return Ok(());
-                        }
-                    }
-                }
-            }
-        }
-    }
+    let (mut decoded_listener, mut stream_api, my_node_num, _) =
+        try_connect_and_configure(&method, &event_tx, "").await?;
 
     // Main event loop — handle ongoing mesh packets and commands
-    let mut stream_api = stream_api_configured;
     loop {
         tokio::select! {
             decoded = decoded_listener.recv() => {
