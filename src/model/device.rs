@@ -560,6 +560,176 @@ impl fmt::Display for RouterError {
 
 impl std::error::Error for RouterError {}
 
+/// Process a single FromRadio payload into DeviceEvents
+async fn handle_payload(
+    event_tx: &async_channel::Sender<DeviceEvent>,
+    payload: &meshtastic::protobufs::from_radio::PayloadVariant,
+    my_node_num: NodeId,
+) -> anyhow::Result<()> {
+    use meshtastic::protobufs::from_radio::PayloadVariant;
+
+    match payload {
+        PayloadVariant::NodeInfo(node_info) => {
+            let num = node_info.num;
+            let (long_name, short_name, hw_model) = if let Some(user) = &node_info.user {
+                let hw = format!("{:?}", user.hw_model());
+                (user.long_name.clone(), user.short_name.clone(), hw)
+            } else {
+                (String::new(), String::new(), String::new())
+            };
+
+            event_tx
+                .send(DeviceEvent::NodeInfo {
+                    num,
+                    long_name,
+                    short_name,
+                    hw_model,
+                })
+                .await?;
+
+            if let Some(position) = &node_info.position {
+                let lat = position.latitude_i.unwrap_or(0) as f64 * 1e-7;
+                let lon = position.longitude_i.unwrap_or(0) as f64 * 1e-7;
+                let alt = position.altitude.unwrap_or(0);
+                event_tx
+                    .send(DeviceEvent::NodePosition {
+                        num,
+                        latitude: lat,
+                        longitude: lon,
+                        altitude: alt,
+                    })
+                    .await?;
+            }
+
+            if let Some(metrics) = &node_info.device_metrics {
+                event_tx
+                    .send(DeviceEvent::NodeMetrics {
+                        num,
+                        battery_level: metrics.battery_level.unwrap_or(0),
+                    })
+                    .await?;
+            }
+        }
+        PayloadVariant::Channel(channel) => {
+            let index = channel.index as u32;
+            let (name, role) = if let Some(settings) = &channel.settings {
+                (settings.name.clone(), channel.role)
+            } else {
+                (String::new(), channel.role)
+            };
+            event_tx
+                .send(DeviceEvent::ChannelInfo {
+                    index,
+                    name,
+                    role: role as u32,
+                })
+                .await?;
+        }
+        PayloadVariant::Packet(mesh_packet) => {
+            let from = mesh_packet.from;
+            let to = mesh_packet.to;
+            let channel = mesh_packet.channel;
+            let rx_time = mesh_packet.rx_time;
+            let snr = mesh_packet.rx_snr;
+            let rssi = mesh_packet.rx_rssi;
+            let hop_start = mesh_packet.hop_start;
+            let hop_limit = mesh_packet.hop_limit;
+            let packet_id = mesh_packet.id;
+
+            if let Some(meshtastic::protobufs::mesh_packet::PayloadVariant::Decoded(data)) =
+                &mesh_packet.payload_variant
+            {
+                if data.portnum() == meshtastic::protobufs::PortNum::TextMessageApp {
+                    if let Ok(text) = String::from_utf8(data.payload.clone()) {
+                        event_tx
+                            .send(DeviceEvent::TextMessage {
+                                packet_id,
+                                from,
+                                to,
+                                channel_index: channel,
+                                text,
+                                rx_time,
+                                snr,
+                                rssi,
+                                hop_start,
+                                hop_limit,
+                            })
+                            .await?;
+                    }
+                }
+                if data.portnum() == meshtastic::protobufs::PortNum::PositionApp {
+                    if let Ok(position) =
+                        meshtastic::protobufs::Position::decode(data.payload.as_slice())
+                    {
+                        let lat = position.latitude_i.unwrap_or(0) as f64 * 1e-7;
+                        let lon = position.longitude_i.unwrap_or(0) as f64 * 1e-7;
+                        event_tx
+                            .send(DeviceEvent::NodePosition {
+                                num: from,
+                                latitude: lat,
+                                longitude: lon,
+                                altitude: position.altitude.unwrap_or(0),
+                            })
+                            .await?;
+                    }
+                }
+                if data.portnum() == meshtastic::protobufs::PortNum::TelemetryApp {
+                    if let Ok(telemetry) =
+                        meshtastic::protobufs::Telemetry::decode(data.payload.as_slice())
+                    {
+                        if let Some(
+                            meshtastic::protobufs::telemetry::Variant::DeviceMetrics(metrics),
+                        ) = telemetry.variant
+                        {
+                            event_tx
+                                .send(DeviceEvent::NodeMetrics {
+                                    num: from,
+                                    battery_level: metrics.battery_level.unwrap_or(0),
+                                })
+                                .await?;
+                        }
+                    }
+                }
+                if data.portnum() == meshtastic::protobufs::PortNum::NodeinfoApp {
+                    if let Ok(user) =
+                        meshtastic::protobufs::User::decode(data.payload.as_slice())
+                    {
+                        let hw = format!("{:?}", user.hw_model());
+                        event_tx
+                            .send(DeviceEvent::NodeInfo {
+                                num: from,
+                                long_name: user.long_name,
+                                short_name: user.short_name,
+                                hw_model: hw,
+                            })
+                            .await?;
+                    }
+                }
+                if data.portnum() == meshtastic::protobufs::PortNum::WaypointApp {
+                    if let Ok(wp) =
+                        meshtastic::protobufs::Waypoint::decode(data.payload.as_slice())
+                    {
+                        event_tx
+                            .send(DeviceEvent::WaypointReceived {
+                                id: wp.id,
+                                name: wp.name,
+                                description: wp.description,
+                                latitude: wp.latitude_i.unwrap_or(0) as f64 * 1e-7,
+                                longitude: wp.longitude_i.unwrap_or(0) as f64 * 1e-7,
+                                expire: wp.expire,
+                                locked_to: wp.locked_to,
+                                from_node: from,
+                            })
+                            .await?;
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 /// Background task that runs the Meshtastic connection
 async fn run_device(
     method: ConnectionMethod,
@@ -605,10 +775,84 @@ async fn run_device(
         .await?;
 
     let config_id = utils::generate_rand_id();
-    let mut stream_api = stream_api.configure(config_id).await?;
+    let mut stream_api = match tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        stream_api.configure(config_id),
+    )
+    .await
+    {
+        Ok(Ok(api)) => api,
+        Ok(Err(e)) => {
+            return Err(anyhow::anyhow!("Configuration failed: {e}"));
+        }
+        Err(_) => {
+            return Err(anyhow::anyhow!(
+                "Configuration timed out after 30s. Try disconnecting and reconnecting the device."
+            ));
+        }
+    };
+
+    // configure() just sends WantConfigId — the actual config data
+    // (MyInfo, NodeInfo, Channel, ConfigCompleteId) arrives via decoded_listener.
+    // Drain what we can immediately to get MyInfo early.
 
     let mut my_node_num: NodeId = 0;
+    let mut got_config_complete = false;
 
+    // First, drain initial config burst with a short timeout per packet.
+    // The device sends config data rapidly after WantConfigId.
+    loop {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            decoded_listener.recv(),
+        ).await {
+            Ok(Some(from_radio)) => {
+                if let Some(payload) = from_radio.payload_variant {
+                    use meshtastic::protobufs::from_radio::PayloadVariant;
+                    match &payload {
+                        PayloadVariant::MyInfo(info) => {
+                            my_node_num = info.my_node_num;
+                            event_tx.send(DeviceEvent::Connected {
+                                my_node_num: info.my_node_num,
+                            }).await?;
+                        }
+                        PayloadVariant::ConfigCompleteId(_) => {
+                            got_config_complete = true;
+                            event_tx.send(DeviceEvent::ConfigComplete).await?;
+                        }
+                        _ => {}
+                    }
+                    // Process config data through the normal handler
+                    handle_payload(&event_tx, &payload, my_node_num).await?;
+
+                    if got_config_complete {
+                        break;
+                    }
+                }
+            }
+            Ok(None) => {
+                event_tx.send(DeviceEvent::Disconnected).await?;
+                return Ok(());
+            }
+            Err(_) => {
+                // Timeout — no more config packets
+                log::warn!("Config drain timed out, proceeding anyway");
+                if my_node_num == 0 {
+                    event_tx.send(DeviceEvent::Error(
+                        "Device did not send node info. Try reconnecting.".into()
+                    )).await?;
+                    return Ok(());
+                }
+                // Send config complete even if we didn't get the explicit packet
+                if !got_config_complete {
+                    event_tx.send(DeviceEvent::ConfigComplete).await?;
+                }
+                break;
+            }
+        }
+    }
+
+    // Main event loop — handle ongoing mesh packets and commands
     loop {
         tokio::select! {
             decoded = decoded_listener.recv() => {
@@ -616,161 +860,8 @@ async fn run_device(
                     event_tx.send(DeviceEvent::Disconnected).await?;
                     break;
                 };
-
-                let Some(payload) = from_radio.payload_variant else {
-                    continue;
-                };
-
-                use meshtastic::protobufs::from_radio::PayloadVariant;
-                match payload {
-                    PayloadVariant::MyInfo(info) => {
-                        my_node_num = info.my_node_num;
-                        event_tx.send(DeviceEvent::Connected {
-                            my_node_num: info.my_node_num,
-                        }).await?;
-                    }
-                    PayloadVariant::ConfigCompleteId(_) => {
-                        event_tx.send(DeviceEvent::ConfigComplete).await?;
-                    }
-                    PayloadVariant::NodeInfo(node_info) => {
-                        let num = node_info.num;
-                        let (long_name, short_name, hw_model) =
-                            if let Some(user) = node_info.user {
-                                {
-                                    let hw = format!("{:?}", user.hw_model());
-                                    (user.long_name, user.short_name, hw)
-                                }
-                            } else {
-                                (String::new(), String::new(), String::new())
-                            };
-
-                        event_tx.send(DeviceEvent::NodeInfo {
-                            num,
-                            long_name,
-                            short_name,
-                            hw_model,
-                        }).await?;
-
-                        if let Some(position) = node_info.position {
-                            let lat = position.latitude_i.unwrap_or(0) as f64 * 1e-7;
-                            let lon = position.longitude_i.unwrap_or(0) as f64 * 1e-7;
-                            let alt = position.altitude.unwrap_or(0);
-                            event_tx.send(DeviceEvent::NodePosition {
-                                num,
-                                latitude: lat,
-                                longitude: lon,
-                                altitude: alt,
-                            }).await?;
-                        }
-
-                        if let Some(metrics) = node_info.device_metrics {
-                            event_tx.send(DeviceEvent::NodeMetrics {
-                                num,
-                                battery_level: metrics.battery_level.unwrap_or(0),
-                            }).await?;
-                        }
-                    }
-                    PayloadVariant::Channel(channel) => {
-                        let index = channel.index as u32;
-                        let (name, role) = if let Some(settings) = channel.settings {
-                            (settings.name, channel.role)
-                        } else {
-                            (String::new(), channel.role)
-                        };
-                        event_tx.send(DeviceEvent::ChannelInfo {
-                            index,
-                            name,
-                            role: role as u32,
-                        }).await?;
-                    }
-                    PayloadVariant::Packet(mesh_packet) => {
-                        let from = mesh_packet.from;
-                        let to = mesh_packet.to;
-                        let channel = mesh_packet.channel;
-                        let rx_time = mesh_packet.rx_time;
-                        let snr = mesh_packet.rx_snr;
-                        let rssi = mesh_packet.rx_rssi;
-                        let hop_start = mesh_packet.hop_start;
-                        let hop_limit = mesh_packet.hop_limit;
-                        let packet_id = mesh_packet.id;
-
-                        if let Some(meshtastic::protobufs::mesh_packet::PayloadVariant::Decoded(data)) =
-                            mesh_packet.payload_variant
-                        {
-                            if data.portnum() == meshtastic::protobufs::PortNum::TextMessageApp {
-                                if let Ok(text) = String::from_utf8(data.payload.clone()) {
-                                    event_tx.send(DeviceEvent::TextMessage {
-                                        packet_id,
-                                        from,
-                                        to,
-                                        channel_index: channel,
-                                        text,
-                                        rx_time,
-                                        snr,
-                                        rssi,
-                                        hop_start,
-                                        hop_limit,
-                                    }).await?;
-                                }
-                            }
-                            if data.portnum() == meshtastic::protobufs::PortNum::PositionApp {
-                                if let Ok(position) = meshtastic::protobufs::Position::decode(
-                                    data.payload.as_slice(),
-                                ) {
-                                    let lat = position.latitude_i.unwrap_or(0) as f64 * 1e-7;
-                                    let lon = position.longitude_i.unwrap_or(0) as f64 * 1e-7;
-                                    event_tx.send(DeviceEvent::NodePosition {
-                                        num: from,
-                                        latitude: lat,
-                                        longitude: lon,
-                                        altitude: position.altitude.unwrap_or(0),
-                                    }).await?;
-                                }
-                            }
-                            if data.portnum() == meshtastic::protobufs::PortNum::TelemetryApp {
-                                if let Ok(telemetry) = meshtastic::protobufs::Telemetry::decode(
-                                    data.payload.as_slice(),
-                                ) {
-                                    if let Some(meshtastic::protobufs::telemetry::Variant::DeviceMetrics(metrics)) = telemetry.variant {
-                                        event_tx.send(DeviceEvent::NodeMetrics {
-                                            num: from,
-                                            battery_level: metrics.battery_level.unwrap_or(0),
-                                        }).await?;
-                                    }
-                                }
-                            }
-                            if data.portnum() == meshtastic::protobufs::PortNum::NodeinfoApp {
-                                if let Ok(user) = meshtastic::protobufs::User::decode(
-                                    data.payload.as_slice(),
-                                ) {
-                                    let hw = format!("{:?}", user.hw_model());
-                                    event_tx.send(DeviceEvent::NodeInfo {
-                                        num: from,
-                                        long_name: user.long_name,
-                                        short_name: user.short_name,
-                                        hw_model: hw,
-                                    }).await?;
-                                }
-                            }
-                            if data.portnum() == meshtastic::protobufs::PortNum::WaypointApp {
-                                if let Ok(wp) = meshtastic::protobufs::Waypoint::decode(
-                                    data.payload.as_slice(),
-                                ) {
-                                    event_tx.send(DeviceEvent::WaypointReceived {
-                                        id: wp.id,
-                                        name: wp.name,
-                                        description: wp.description,
-                                        latitude: wp.latitude_i.unwrap_or(0) as f64 * 1e-7,
-                                        longitude: wp.longitude_i.unwrap_or(0) as f64 * 1e-7,
-                                        expire: wp.expire,
-                                        locked_to: wp.locked_to,
-                                        from_node: from,
-                                    }).await?;
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
+                if let Some(ref payload) = from_radio.payload_variant {
+                    handle_payload(&event_tx, payload, my_node_num).await?;
                 }
             }
             cmd = cmd_rx.recv() => {
