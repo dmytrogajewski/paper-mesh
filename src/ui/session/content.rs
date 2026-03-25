@@ -112,7 +112,10 @@ impl Content {
 
         let messages = channel.messages();
 
-        // Set new model
+        // Force ListView to fully reset by clearing then setting model.
+        // Without the clear, GTK may reuse stale list items from the previous model.
+        imp.message_list_view
+            .set_model(gtk::SelectionModel::NONE);
         let selection = gtk::NoSelection::new(Some(messages.clone()));
         imp.message_list_view.set_model(Some(&selection));
 
