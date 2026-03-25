@@ -16,6 +16,20 @@ pub(crate) enum MessageDirection {
     Outgoing,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, glib::Enum)]
+#[enum_type(name = "DeliveryStatus")]
+pub(crate) enum DeliveryStatus {
+    #[default]
+    /// Not applicable (incoming messages)
+    None,
+    /// Sent, waiting for ACK
+    Sending,
+    /// ACK received — delivered
+    Delivered,
+    /// NAK or timeout — failed
+    Failed,
+}
+
 mod imp {
     use super::*;
 
@@ -33,6 +47,7 @@ mod imp {
         pub(super) hop_start: Cell<u32>,
         pub(super) hop_limit: Cell<u32>,
         pub(super) sender_name: RefCell<String>,
+        pub(super) delivery_status: Cell<DeliveryStatus>,
     }
 
     #[glib::object_subclass]
@@ -52,6 +67,7 @@ mod imp {
                     glib::ParamSpecString::builder("text").read_only().build(),
                     glib::ParamSpecUInt::builder("timestamp").read_only().build(),
                     glib::ParamSpecString::builder("sender-name").read_only().build(),
+                    glib::ParamSpecEnum::builder::<DeliveryStatus>("delivery-status").read_only().build(),
                 ]
             })
         }
@@ -64,6 +80,7 @@ mod imp {
                 "text" => obj.text().to_value(),
                 "timestamp" => obj.timestamp().to_value(),
                 "sender-name" => obj.sender_name().to_value(),
+                "delivery-status" => obj.delivery_status().to_value(),
                 _ => unimplemented!(),
             }
         }
@@ -151,6 +168,15 @@ impl MeshMessage {
 
     pub(crate) fn hops(&self) -> u32 {
         self.imp().hop_start.get().saturating_sub(self.imp().hop_limit.get())
+    }
+
+    pub(crate) fn delivery_status(&self) -> DeliveryStatus {
+        self.imp().delivery_status.get()
+    }
+
+    pub(crate) fn set_delivery_status(&self, status: DeliveryStatus) {
+        self.imp().delivery_status.set(status);
+        self.notify("delivery-status");
     }
 }
 

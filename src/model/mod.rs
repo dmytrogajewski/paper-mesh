@@ -15,6 +15,10 @@ use gtk::glib;
 pub(crate) use self::channel::Channel;
 pub(crate) use self::device::Device;
 pub(crate) use self::device::DeviceState;
+mod canned_messages;
+
+pub(crate) use self::canned_messages::CannedMessages;
+pub(crate) use self::message::DeliveryStatus;
 pub(crate) use self::message::MeshMessage;
 pub(crate) use self::message::MessageDirection;
 pub(crate) use self::message_list::MessageList;

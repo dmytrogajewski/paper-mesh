@@ -1,4 +1,5 @@
 use adw::subclass::prelude::*;
+use glib::clone;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::CompositeTemplate;
@@ -22,6 +23,8 @@ mod imp {
         pub(super) info_label: TemplateChild<gtk::Label>,
         #[template_child]
         pub(super) message_box: TemplateChild<gtk::Box>,
+        #[template_child]
+        pub(super) delivery_icon: TemplateChild<gtk::Image>,
     }
 
     #[glib::object_subclass]
@@ -87,6 +90,52 @@ impl MessageRow {
             model::MessageDirection::Incoming => {
                 imp.message_box.set_halign(gtk::Align::Start);
                 imp.message_box.remove_css_class("accent");
+            }
+        }
+
+        // Delivery status icon (outgoing only)
+        self.update_delivery_icon(message.delivery_status());
+
+        if message.direction() == model::MessageDirection::Outgoing {
+            imp.delivery_icon.set_visible(true);
+            // Listen for delivery status changes
+            message.connect_notify_local(
+                Some("delivery-status"),
+                clone!(@weak self as obj => move |msg, _| {
+                    obj.update_delivery_icon(msg.delivery_status());
+                }),
+            );
+        } else {
+            imp.delivery_icon.set_visible(false);
+        }
+    }
+
+    fn update_delivery_icon(&self, status: model::DeliveryStatus) {
+        let icon = &self.imp().delivery_icon;
+        match status {
+            model::DeliveryStatus::None => {
+                icon.set_visible(false);
+            }
+            model::DeliveryStatus::Sending => {
+                icon.set_icon_name(Some("emblem-synchronizing-symbolic"));
+                icon.set_tooltip_text(Some("Sending..."));
+                icon.remove_css_class("success");
+                icon.remove_css_class("error");
+                icon.set_visible(true);
+            }
+            model::DeliveryStatus::Delivered => {
+                icon.set_icon_name(Some("emblem-ok-symbolic"));
+                icon.set_tooltip_text(Some("Delivered"));
+                icon.add_css_class("success");
+                icon.remove_css_class("error");
+                icon.set_visible(true);
+            }
+            model::DeliveryStatus::Failed => {
+                icon.set_icon_name(Some("dialog-warning-symbolic"));
+                icon.set_tooltip_text(Some("Delivery failed"));
+                icon.remove_css_class("success");
+                icon.add_css_class("error");
+                icon.set_visible(true);
             }
         }
     }

@@ -66,6 +66,11 @@ pub(crate) enum DeviceEvent {
         hop_start: u32,
         hop_limit: u32,
     },
+    /// ACK/NAK for a previously sent message
+    DeliveryAck {
+        request_id: u32,
+        error: u32, // 0 = success, >0 = routing::Error value
+    },
     WaypointReceived {
         id: u32,
         name: String,
@@ -558,7 +563,8 @@ impl Device {
                 hop_start,
                 hop_limit,
             } => {
-                let direction = if from == self.my_node_num() {
+                let is_outgoing = from == self.my_node_num();
+                let direction = if is_outgoing {
                     MessageDirection::Outgoing
                 } else {
                     MessageDirection::Incoming
@@ -574,6 +580,20 @@ impl Device {
                     direction,
                 );
                 message.set_radio_info(snr, rssi, hop_start, hop_limit);
+
+                // Set delivery status for outgoing messages
+                if is_outgoing {
+                    message.set_delivery_status(super::DeliveryStatus::Sending);
+                    // Timeout: mark as failed after 60s if no ACK
+                    let msg_weak = message.downgrade();
+                    glib::timeout_add_seconds_local_once(60, move || {
+                        if let Some(msg) = msg_weak.upgrade() {
+                            if msg.delivery_status() == super::DeliveryStatus::Sending {
+                                msg.set_delivery_status(super::DeliveryStatus::Failed);
+                            }
+                        }
+                    });
+                }
 
                 if let Some(node) = self.nodes().find_by_num(from) {
                     message.set_sender_name(&node.display_name());
@@ -631,6 +651,28 @@ impl Device {
                     "Waypoint received: {} ({}, {}) from !{:08x}",
                     name, latitude, longitude, from_node
                 );
+            }
+            DeviceEvent::DeliveryAck { request_id, error } => {
+                // Find the message with this packet_id and update its delivery status
+                let status = if error == 0 {
+                    super::DeliveryStatus::Delivered
+                } else {
+                    super::DeliveryStatus::Failed
+                };
+                // Search all channels for the message
+                for ch in self.channels() {
+                    let msgs = ch.messages();
+                    for i in 0..msgs.n_items() {
+                        if let Some(obj) = msgs.item(i) {
+                            if let Some(msg) = obj.downcast_ref::<MeshMessage>() {
+                                if msg.packet_id() == request_id {
+                                    msg.set_delivery_status(status);
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -815,6 +857,27 @@ async fn handle_payload(
                                 from_node: from,
                             })
                             .await?;
+                    }
+                }
+                // Handle ACK/NAK routing packets
+                if data.portnum() == meshtastic::protobufs::PortNum::RoutingApp {
+                    if let Ok(routing) =
+                        meshtastic::protobufs::Routing::decode(data.payload.as_slice())
+                    {
+                        let error_code = match routing.variant {
+                            Some(meshtastic::protobufs::routing::Variant::ErrorReason(e)) => {
+                                e as u32
+                            }
+                            _ => 0,
+                        };
+                        if data.request_id != 0 {
+                            event_tx
+                                .send(DeviceEvent::DeliveryAck {
+                                    request_id: data.request_id,
+                                    error: error_code,
+                                })
+                                .await?;
+                        }
                     }
                 }
             }

@@ -52,20 +52,37 @@ template $PaplMessageRow: Box {
       selectable: true;
       margin-start: 8;
       margin-end: 8;
-      margin-bottom: 4;
+      margin-bottom: 2;
     }
 
-    Label info_label {
-      xalign: 0;
-      visible: false;
+    Box {
+      orientation: horizontal;
+      spacing: 4;
       margin-start: 8;
       margin-end: 8;
       margin-bottom: 4;
 
-      styles [
-        "dim-label",
-        "caption",
-      ]
+      Label info_label {
+        xalign: 0;
+        visible: false;
+        hexpand: true;
+
+        styles [
+          "dim-label",
+          "caption",
+        ]
+      }
+
+      // Delivery status indicator (outgoing only)
+      Image delivery_icon {
+        visible: false;
+        pixel-size: 12;
+        valign: center;
+
+        styles [
+          "dim-label",
+        ]
+      }
     }
   }
 }
